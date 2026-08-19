@@ -51,6 +51,20 @@ bash analyzer.sh https://example.com
 Полная документация: [docs/ANALYZER.md](docs/ANALYZER.md), тесты —
 `tests/run_tests.sh`, история изменений — `CHANGELOG.md`.
 
+### 3. Веб-GUI для analyzer.sh
+
+Браузерный интерфейс аудита: форма ввода URL, карточки метрик
+(DNS, TCP, TLS, TTFB), таблица заголовков и полный JSON-отчёт.
+Сервер на стандартной библиотеке Python — без новых зависимостей.
+
+**Быстрый старт:**
+
+```bash
+python3 gui/server.py            # http://localhost:8000/
+```
+
+Документация: [docs/GUI.md](docs/GUI.md), тесты — `tests/run_gui_tests.sh`.
+
 ## Структура репозитория
 
 | Путь | Описание |
@@ -61,5 +75,6 @@ bash analyzer.sh https://example.com
 | `har2apimap.py` | анализатор HAR-логов для карты API |
 | `examples/`, `docs/` | примеры процессов и документация F2C-инструмента |
 | `analyzer.sh` | аудитор веб-ресурсов для Termux |
-| `tests/` | тесты анализатора |
+| `gui/` | веб-GUI для analyzer.sh (сервер + одностраничный интерфейс) |
+| `tests/` | тесты анализатора и GUI |
 | `requirements.txt` | зависимости Python-инструмента |
