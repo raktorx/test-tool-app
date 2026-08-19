@@ -1,0 +1,31 @@
+{% extends "base.html" %}
+{% block title %}Серийник · Карточка #{{ card_id }} · F2C{% endblock %}
+{% block content %}
+<h1>Поиск по серийному номеру · карточка #{{ card_id }}</h1>
+<p class="sub">Два режима: ручной ввод (serial-lookup/manual) и распознавание по фото (serial-lookup/photo)</p>
+{% include "_tabs.html" %}
+
+  {% if result %}
+  <div class="error-box" style="background: #14321f; border-color: #23693f; color: var(--ok);">
+    Найдено через {{ result.path }}<br>
+    <pre class="json">{{ result.data }}</pre>
+  </div>
+  {% endif %}
+
+  <h2>Ручной ввод</h2>
+  <form method="post" action="/equipment/{{ card_id }}/serial">
+    <label>Серийный номер</label>
+    <input name="number" placeholder="SN500" required>
+    <label class="check"><input type="checkbox" name="dry_run" value="1"> Dry-run</label>
+    <div style="margin-top: 10px;"><button type="submit">Найти</button></div>
+  </form>
+
+  <h2>Распознавание по фото</h2>
+  <form method="post" action="/equipment/{{ card_id }}/serial-photo" enctype="multipart/form-data">
+    <label>Фото серийного номера</label>
+    <input type="file" name="file" accept="image/*" required>
+    <label class="check"><input type="checkbox" name="dry_run" value="1"> Dry-run</label>
+    <div style="margin-top: 10px;"><button type="submit" class="secondary">Распознать (OCR)</button></div>
+  </form>
+</div>
+{% endblock %}

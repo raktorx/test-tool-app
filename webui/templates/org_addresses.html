@@ -1,0 +1,21 @@
+{% extends "base.html" %}
+{% block title %}Адреса организации · F2C{% endblock %}
+{% block content %}
+<h1>Адреса · {% if org %}{{ org.get('name') }}{% else %}организация #{{ org_id }}{% endif %}</h1>
+<p class="sub">Уровень 2: адреса загружены через /api/organizations/{{ org_id }}/addresses (ленивая загрузка)</p>
+<div class="panel">
+  <table>
+    <tr><th>ID</th><th>Адрес</th><th></th></tr>
+    {% for a in addresses %}
+    <tr>
+      <td class="mono">{{ a.id }}</td>
+      <td>{{ a.label }}</td>
+      <td><a href="/equipment?address_id={{ a.id }}">Оборудование →</a></td>
+    </tr>
+    {% else %}
+    <tr><td colspan="3">У организации нет адресов.</td></tr>
+    {% endfor %}
+  </table>
+</div>
+<p><a href="/organizations">← Все организации</a></p>
+{% endblock %}

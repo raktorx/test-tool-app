@@ -1,0 +1,22 @@
+{% extends "base.html" %}
+{% block title %}Dry-run предпросмотр · F2C{% endblock %}
+{% block content %}
+<h1>Dry-run: предпросмотр запроса</h1>
+<p class="sub">Запрос НЕ отправлен на сервер. Вот что было бы выполнено:</p>
+<div class="panel">
+  <div class="kv">
+    <b>Метод</b><span class="mono">{{ method }}</span>
+    <b>Пути-кандидаты</b>
+    <span>
+      {% for p in paths %}
+      <div class="mono" style="margin-bottom: 2px;">• {{ p }}</div>
+      {% else %}
+      <span class="mono">(нет)</span>
+      {% endfor %}
+    </span>
+    <b>Тело запроса</b><span></span>
+  </div>
+  <pre class="json">{{ payload }}</pre>
+</div>
+<a class="btn secondary" style="display:inline-block; padding: 9px 16px;" href="{{ back }}">← Назад</a>
+{% endblock %}

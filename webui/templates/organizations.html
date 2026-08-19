@@ -1,0 +1,17 @@
+{% extends "base.html" %}
+{% block title %}Организации · F2C{% endblock %}
+{% block content %}
+<h1>Организации</h1>
+<p class="sub">Уровень 1 иерархии: организации → адреса → инвентаризации → оборудование</p>
+<div class="grid">
+{% for o in orgs %}
+  <div class="card">
+    <h3>#{{ o.get('id') }} {{ o.get('name') or o.get('title') or '—' }}</h3>
+    <div class="meta">организация</div>
+    <div class="go"><a href="/organizations/{{ o.get('id') }}/addresses">Адреса →</a></div>
+  </div>
+{% else %}
+  <div class="panel">Организаций нет.</div>
+{% endfor %}
+</div>
+{% endblock %}

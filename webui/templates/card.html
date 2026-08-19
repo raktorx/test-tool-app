@@ -1,0 +1,51 @@
+{% extends "base.html" %}
+{% block title %}Карточка #{{ card_id }} · F2C{% endblock %}
+{% block content %}
+<h1>Карточка оборудования #{{ card_id }}</h1>
+<p class="sub">источник данных: {{ source }}</p>
+{% include "_tabs.html" %}
+  {% if card %}
+  <div class="kv">
+    <b>ID</b><span class="mono">{{ card.get('id') }}</span>
+    <b>Название / модель</b><span>{{ card.get('name') or '—' }}</span>
+    <b>Серийный номер</b><span class="mono">{{ card.get('serial_number') or '—' }}</span>
+    <b>Инвентарный номер</b><span class="mono">{{ card.get('inventory_number') or '—' }}</span>
+    <b>Адрес</b><span class="mono"><a href="/equipment?address_id={{ card.get('address_id') }}">{{ card.get('address_id') or '—' }}</a></span>
+    <b>Статус</b><span><span class="badge {{ card.get('status') }}">{{ card.get('status') }}</span></span>
+    <b>Комментарий</b><span>{{ card.get('comment') or card.get('review_comment') or '—' }}</span>
+  </div>
+
+  <h2>Редактирование</h2>
+  <form method="post" action="/equipment/{{ card_id }}/edit">
+    <div class="form-row">
+      <div><label>Название / модель</label><input name="name" value="{{ card.get('name') or '' }}" required></div>
+      <div><label>Статус</label>
+        <select name="status">
+          <option value="">— не менять —</option>
+          {% for s in ('active', 'repair', 'found', 'unfound') %}
+          <option value="{{ s }}" {{ 'selected' if card.get('status') == s else '' }}>{{ s }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div><label>Серийный номер</label><input name="serial_number" value="{{ card.get('serial_number') or '' }}"></div>
+      <div><label>Инвентарный номер</label><input name="inventory_number" value="{{ card.get('inventory_number') or '' }}"></div>
+    </div>
+    <label>Комментарий</label><input name="comment" value="{{ card.get('comment') or '' }}">
+    <label class="check"><input type="checkbox" name="dry_run" value="1"> Dry-run (показать JSON без отправки)</label>
+    <div style="margin-top: 14px;"><button type="submit">Сохранить (PUT)</button></div>
+  </form>
+  {% else %}
+  <div class="error-box">Карточка недоступна (или ответ API не является объектом).</div>
+  {% endif %}
+</div>
+
+<h2 style="color: var(--err);">Опасная зона</h2>
+<div class="panel" style="border-color: #7a2e2e;">
+  <form method="post" action="/equipment/{{ card_id }}/delete"
+        onsubmit="return confirm('Удалить карточку #{{ card_id }}? Это действие необратимо!');">
+    <input type="hidden" name="confirm" value="DELETE">
+    <label class="check"><input type="checkbox" name="dry_run" value="1"> Dry-run</label>
+    <div style="margin-top: 12px;"><button type="submit" class="danger">Удалить карточку</button></div>
+  </form>
+</div>
+{% endblock %}
