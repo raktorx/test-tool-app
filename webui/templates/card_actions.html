@@ -1,0 +1,73 @@
+{% extends "base.html" %}
+{% block title %}Действия · Карточка #{{ card_id }} · F2C{% endblock %}
+{% block content %}
+<h1>Действия · карточка #{{ card_id }}</h1>
+<p class="sub">Эндпоинты подбираются через candidate trial (карта API → типовые REST-пути)</p>
+{% include "_tabs.html" %}
+
+  <h2>Отметка по итогам инвентаризации</h2>
+  <p class="hint">Маршруты из карты: /equipment/inventories/{inv}/{eq}/found|unfound — передайте ID инвентаризации.</p>
+  <form method="post" action="/equipment/{{ card_id }}/action/found" style="margin-bottom: 14px;">
+    <div class="form-row">
+      <div>
+        <label>Инвентаризация</label>
+        <select name="inventory_id">
+          <option value="">— без привязки —</option>
+          {% for i in inventories %}
+          <option value="{{ i.get('id') }}">#{{ i.get('id') }} {{ i.get('title') or i.get('name') }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div>
+        <label>&nbsp;</label>
+        <label class="check"><input type="checkbox" name="dry_run" value="1"> Dry-run</label>
+      </div>
+    </div>
+    <div style="margin-top: 10px; display: flex; gap: 10px;">
+      <button type="submit">✓ Найдено</button>
+    </div>
+  </form>
+
+  <form method="post" action="/equipment/{{ card_id }}/action/unfound" style="margin-bottom: 14px;">
+    <div class="form-row">
+      <div>
+        <label>Инвентаризация</label>
+        <select name="inventory_id">
+          <option value="">— без привязки —</option>
+          {% for i in inventories %}
+          <option value="{{ i.get('id') }}">#{{ i.get('id') }} {{ i.get('title') or i.get('name') }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div>
+        <label>&nbsp;</label>
+        <label class="check"><input type="checkbox" name="dry_run" value="1"> Dry-run</label>
+      </div>
+    </div>
+    <div style="margin-top: 10px;">
+      <button type="submit" class="secondary">✗ Не найдено</button>
+    </div>
+  </form>
+
+  <h2>Перенос на другой адрес</h2>
+  <form method="post" action="/equipment/{{ card_id }}/action/transfer">
+    <label>Адрес-получатель (загружен лениво по всем организациям)</label>
+    <select name="to_address_id" required>
+      <option value="">— выберите адрес —</option>
+      {% for a in addresses %}
+      <option value="{{ a.id }}">#{{ a.id }} {{ a.label }}</option>
+      {% endfor %}
+    </select>
+    <label class="check"><input type="checkbox" name="dry_run" value="1"> Dry-run</label>
+    <div style="margin-top: 10px;"><button type="submit">Перенести (transfer)</button></div>
+  </form>
+
+  <h2>Осмотр (review)</h2>
+  <form method="post" action="/equipment/{{ card_id }}/action/review">
+    <label>Комментарий осмотра</label>
+    <textarea name="comment" rows="3" placeholder="Оборудование в норме…"></textarea>
+    <label class="check"><input type="checkbox" name="dry_run" value="1"> Dry-run</label>
+    <div style="margin-top: 10px;"><button type="submit" class="secondary">Отправить осмотр</button></div>
+  </form>
+</div>
+{% endblock %}

@@ -1,0 +1,20 @@
+{% extends "base.html" %}
+{% block title %}Инвентаризации · F2C{% endblock %}
+{% block content %}
+<h1>Инвентаризации</h1>
+<p class="sub">Уровень 3: кампании учёта. ID используется в действиях «найдено/не найдено»</p>
+<div class="panel">
+  <table>
+    <tr><th>ID</th><th>Название</th><th>Статус</th></tr>
+    {% for i in inventories %}
+    <tr>
+      <td class="mono">{{ i.get('id') }}</td>
+      <td>{{ i.get('title') or i.get('name') or '—' }}</td>
+      <td><span class="badge {{ i.get('status') }}">{{ i.get('status') }}</span></td>
+    </tr>
+    {% else %}
+    <tr><td colspan="3">Инвентаризаций нет.</td></tr>
+    {% endfor %}
+  </table>
+</div>
+{% endblock %}

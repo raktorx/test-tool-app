@@ -1,0 +1,11 @@
+{% extends "base.html" %}
+{% block title %}Ошибка · F2C{% endblock %}
+{% block content %}
+<h1>Операция не выполнена</h1>
+<div class="error-box" style="margin-top: 16px;">
+  {{ error }}<br><br>
+  <span class="hint">Подсказка: NOT_FOUND — обновите карту API (recon --har);
+  UNAUTHORIZED — повторите вход (сессия обновляется автоматически по /api/auth/refresh).</span>
+</div>
+<p style="margin-top: 16px;"><a href="{{ back }}">← Вернуться</a></p>
+{% endblock %}

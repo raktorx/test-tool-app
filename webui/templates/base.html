@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{% block title %}F2C · Инвентаризация{% endblock %}</title>
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+<header class="topbar">
+  <div class="brand"><a href="/">🏷 F2C <span>· учёт оборудования</span></a></div>
+  <nav>
+    <a href="/organizations">Организации</a>
+    <a href="/addresses">Адреса</a>
+    <a href="/equipment">Оборудование</a>
+    <a href="/equipment/new" class="accent">+ Добавить</a>
+    <a href="/inventories">Инвентаризации</a>
+  </nav>
+  <div class="user">
+    {% if user_email %}
+      <span class="who">{{ user_email }}</span> · <a href="/logout">Выйти</a>
+    {% else %}
+      <a href="/login">Войти</a>
+    {% endif %}
+  </div>
+</header>
+
+{% if flash %}
+<div class="flash {{ flash[0] }}">{{ flash[1] }}</div>
+{% endif %}
+
+<main class="container">
+{% block content %}{% endblock %}
+</main>
+
+<footer class="footer">
+  {% if demo %}
+    <span class="badge-demo">демо-режим: данные от мок-бэкенда (пароль «secret»)</span>
+  {% endif %}
+  GUI работает поверх ядра f2c_ops: candidate trial, авто-refresh токена, карта api_map.json
+</footer>
+</body>
+</html>
