@@ -1,0 +1,252 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>analyzer.sh — GUI аудита веб-ресурсов</title>
+<style>
+  :root {
+    --bg: #0f1420; --panel: #171e2e; --panel2: #1d2639; --border: #2a3550;
+    --text: #e6ecf7; --muted: #8ea0c0; --accent: #4f8cff; --accent2: #6ea8ff;
+    --ok: #3ecf8e; --warn: #f5b83d; --err: #ff6b6b; --mono: ui-monospace, "Cascadia Code", "JetBrains Mono", Consolas, monospace;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--text);
+    font: 15px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  }
+  .wrap { max-width: 980px; margin: 0 auto; padding: 24px 16px 64px; }
+  header { display: flex; align-items: baseline; gap: 12px; margin-bottom: 20px; flex-wrap: wrap; }
+  header h1 { font-size: 22px; margin: 0; }
+  header .sub { color: var(--muted); font-size: 13px; }
+  .card {
+    background: var(--panel); border: 1px solid var(--border);
+    border-radius: 12px; padding: 18px; margin-bottom: 16px;
+  }
+  form .row { display: flex; gap: 10px; flex-wrap: wrap; }
+  input[type=text], input[type=number] {
+    background: var(--panel2); border: 1px solid var(--border); color: var(--text);
+    border-radius: 8px; padding: 10px 12px; font-size: 15px; outline: none;
+  }
+  input:focus { border-color: var(--accent); }
+  #url { flex: 1 1 320px; }
+  button {
+    background: var(--accent); color: #fff; border: 0; border-radius: 8px;
+    padding: 10px 22px; font-size: 15px; font-weight: 600; cursor: pointer;
+  }
+  button:hover { background: var(--accent2); }
+  button:disabled { opacity: .5; cursor: default; }
+  details.opts { margin-top: 12px; color: var(--muted); }
+  details.opts summary { cursor: pointer; user-select: none; }
+  .opts-grid { display: flex; gap: 16px; flex-wrap: wrap; margin-top: 10px; align-items: center; }
+  .opts-grid label { display: flex; align-items: center; gap: 6px; font-size: 13px; }
+  .opts-grid input[type=number] { width: 90px; padding: 6px 8px; font-size: 13px; }
+  .status { display: flex; align-items: center; gap: 10px; min-height: 24px; margin: 4px 0 0; color: var(--muted); font-size: 14px; }
+  .spinner {
+    width: 16px; height: 16px; border: 2px solid var(--border);
+    border-top-color: var(--accent); border-radius: 50%;
+    animation: spin .8s linear infinite; display: none;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .badge { display: inline-block; padding: 2px 10px; border-radius: 999px; font-size: 12px; font-weight: 700; }
+  .badge.success { background: rgba(62,207,142,.15); color: var(--ok); }
+  .badge.partial { background: rgba(245,184,61,.15); color: var(--warn); }
+  .badge.error   { background: rgba(255,107,107,.15); color: var(--err); }
+  h2 { font-size: 15px; margin: 0 0 12px; color: var(--muted); text-transform: uppercase; letter-spacing: .06em; }
+  table { width: 100%; border-collapse: collapse; font-size: 14px; }
+  td, th { padding: 7px 10px; border-bottom: 1px solid var(--border); text-align: left; vertical-align: top; }
+  td:first-child { color: var(--muted); width: 42%; }
+  tr:last-child td { border-bottom: 0; }
+  .metrics-bar { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 14px; }
+  .metric {
+    flex: 1 1 120px; background: var(--panel2); border: 1px solid var(--border);
+    border-radius: 10px; padding: 10px 14px;
+  }
+  .metric .v { font-size: 20px; font-weight: 700; font-family: var(--mono); }
+  .metric .l { font-size: 12px; color: var(--muted); }
+  pre {
+    background: #0b101b; border: 1px solid var(--border); border-radius: 10px;
+    padding: 14px; overflow: auto; font-family: var(--mono); font-size: 13px;
+    max-height: 480px; margin: 0; white-space: pre-wrap; word-break: break-word;
+  }
+  .err-box { color: var(--err); font-family: var(--mono); font-size: 13px; white-space: pre-wrap; }
+  .hidden { display: none; }
+  a { color: var(--accent2); }
+  .copy { float: right; font-size: 12px; background: var(--panel2); color: var(--muted); padding: 4px 10px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>🔍 analyzer.sh — аудит веб-ресурсов</h1>
+    <span class="sub">DNS · TCP · TLS · TTFB · заголовки · &lt;title&gt; · JSON-отчёт</span>
+  </header>
+
+  <div class="card">
+    <form id="form">
+      <div class="row">
+        <input type="text" id="url" placeholder="example.com или https://example.com" autofocus required>
+        <button type="submit" id="run">Аудит</button>
+      </div>
+      <details class="opts">
+        <summary>Дополнительные опции</summary>
+        <div class="opts-grid">
+          <label>Таймаут, с <input type="number" id="timeout" value="30" min="1" max="120"></label>
+          <label>Таймаут соединения, с <input type="number" id="connect_timeout" value="10" min="1" max="60"></label>
+          <label>Макс. размер, МБ <input type="number" id="max_size_mb" value="10" min="0" max="100"></label>
+          <label><input type="checkbox" id="follow_redirects"> следовать редиректам</label>
+        </div>
+      </details>
+      <div class="status">
+        <div class="spinner" id="spinner"></div>
+        <span id="status"></span>
+      </div>
+    </form>
+  </div>
+
+  <div id="results" class="hidden">
+    <div class="card">
+      <h2>Итог</h2>
+      <div id="summary"></div>
+    </div>
+    <div class="card">
+      <h2>Метрики соединения</h2>
+      <div class="metrics-bar" id="metrics"></div>
+    </div>
+    <div class="card">
+      <h2>Заголовки и содержимое</h2>
+      <table id="headers-table"></table>
+    </div>
+    <div class="card">
+      <h2>JSON-отчёт <button class="copy" id="copy">копировать</button></h2>
+      <pre id="json"></pre>
+    </div>
+  </div>
+
+  <div id="error-card" class="card hidden">
+    <h2>Ошибка</h2>
+    <div class="err-box" id="error-text"></div>
+  </div>
+</div>
+
+<script>
+const $ = id => document.getElementById(id);
+const EXIT_CODES = {
+  1: "общая ошибка", 2: "нет обязательных зависимостей",
+  3: "невалидный URL или запрещённая схема", 4: "сетевая ошибка или таймаут",
+  5: "ошибка GitHub API", 6: "ошибка генерации отчёта", 124: "таймаут выполнения",
+};
+
+function esc(s) {
+  return String(s).replace(/[&<>"]/g, c => ({ "&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;" }[c]));
+}
+
+function badge(status) {
+  const label = { success: "SUCCESS", partial: "PARTIAL", error: "ERROR" }[status] || status;
+  return `<span class="badge ${esc(status)}">${esc(label)}</span>`;
+}
+
+function renderSummary(r) {
+  const rows = [
+    ["URL", esc(r.url)],
+    ["Статус", badge(r.status) + (r.error ? ` — ${esc(r.error)}` : "")],
+    ["HTTP-код", esc(r.http_code)],
+    ["Время (UTC)", esc(r.timestamp)],
+  ];
+  if (r.redirects && r.redirects.followed) {
+    rows.push(["Редиректы", `${r.redirects.count} → ${esc(r.redirects.final_url)}`]);
+  }
+  $("summary").innerHTML = "<table>" +
+    rows.map(([k, v]) => `<tr><td>${k}</td><td>${v}</td></tr>`).join("") + "</table>";
+}
+
+function renderMetrics(t) {
+  const items = [
+    ["DNS", t.dns_resolution], ["TCP", t.tcp_connection],
+    ["TLS", t.tls_handshake], ["TTFB", t.ttfb], ["Всего", t.total],
+  ];
+  $("metrics").innerHTML = items.map(([l, v]) =>
+    `<div class="metric"><div class="v">${esc(v)}<small> c</small></div><div class="l">${esc(l)}</div></div>`
+  ).join("");
+}
+
+function renderHeaders(r) {
+  const h = r.headers || {}, c = r.content || {};
+  const rows = [
+    ["Content-Type", h.content_type],
+    ["Server", h.server],
+    ["Strict-Transport-Security", h.strict_transport_security],
+    ["Content-Length", h.content_length],
+    ["Заголовок страницы (title)", c.title],
+    ["Размер тела", c.size_bytes != null ? c.size_bytes + " байт" : null],
+    ["Сжатие", c.compressed ? "да" : "нет"],
+  ];
+  $("headers-table").innerHTML = rows.map(([k, v]) =>
+    `<tr><td>${esc(k)}</td><td>${v == null ? "<em style='color:var(--muted)'>—</em>" : esc(v)}</td></tr>`
+  ).join("");
+}
+
+async function runAudit(ev) {
+  ev.preventDefault();
+  const url = $("url").value.trim();
+  if (!url) return;
+
+  $("run").disabled = true;
+  $("spinner").style.display = "block";
+  $("status").textContent = "Выполняется аудит " + url + " …";
+  $("results").classList.add("hidden");
+  $("error-card").classList.add("hidden");
+
+  const payload = {
+    url,
+    timeout: +$("timeout").value || 30,
+    connect_timeout: +$("connect_timeout").value || 10,
+    max_size: Math.round((+$("max_size_mb").value || 0) * 1024 * 1024),
+    follow_redirects: $("follow_redirects").checked,
+  };
+
+  let data;
+  try {
+    const resp = await fetch("/api/audit", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    data = await resp.json();
+  } catch (e) {
+    data = { ok: false, error: "Сервер GUI недоступен: " + e };
+  }
+
+  $("run").disabled = false;
+  $("spinner").style.display = "none";
+
+  if (data.report) {
+    const r = data.report;
+    renderSummary(r);
+    renderMetrics(r.timings || {});
+    renderHeaders(r);
+    $("json").textContent = JSON.stringify(r, null, 2);
+    $("results").classList.remove("hidden");
+    const codeNote = data.exit_code ? ` · exit code ${data.exit_code}` +
+      (EXIT_CODES[data.exit_code] ? ` (${EXIT_CODES[data.exit_code]})` : "") : "";
+    $("status").textContent = `Готово за ${data.duration ?? "?"} c${codeNote}`;
+  } else {
+    const msg = data.error ||
+      (data.exit_code ? `analyzer.sh завершился с кодом ${data.exit_code}` +
+        (EXIT_CODES[data.exit_code] ? ` — ${EXIT_CODES[data.exit_code]}` : "") : "Неизвестная ошибка");
+    $("error-text").textContent = msg + (data.stderr ? "\n\n" + data.stderr : "");
+    $("error-card").classList.remove("hidden");
+    $("status").textContent = "Ошибка";
+  }
+}
+
+$("form").addEventListener("submit", runAudit);
+$("copy").addEventListener("click", () => {
+  navigator.clipboard.writeText($("json").textContent).then(() => {
+    $("copy").textContent = "скопировано ✓";
+    setTimeout(() => $("copy").textContent = "копировать", 1500);
+  });
+});
+</script>
+</body>
+</html>
