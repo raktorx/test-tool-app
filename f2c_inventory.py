@@ -58,6 +58,11 @@ try:
 except Exception:  # ImportError или RuntimeError (нет libcurl-impersonate)
     cffi_requests = None
 
+try:
+    import har2apimap  # type: ignore  # анализатор HAR (лежит рядом)
+except ImportError:  # pragma: no cover
+    har2apimap = None
+
 # --------------------------------------------------------------------------
 # Утилиты
 # --------------------------------------------------------------------------
@@ -321,7 +326,7 @@ class Client:
                  retries: int = 3, min_interval: float = 0.0,
                  verbose: bool = False, insecure: bool = False,
                  proxy: str = "", backend: str = "auto", token: str = "",
-                 extra_headers: dict | None = None):
+                 auth_header_template: str = "", extra_headers: dict | None = None):
         self.base_url = base_url.rstrip("/")
         self.timeout = timeout
         self.retries = retries
@@ -331,6 +336,7 @@ class Client:
         self.proxy = proxy
         self.backend = backend
         self.token = token
+        self.auth_header_template = auth_header_template
         self.extra_headers = dict(extra_headers or {})
         self._last_request_ts = 0.0
         self._session = None
@@ -382,7 +388,15 @@ class Client:
         }
         h.update(self.extra_headers)
         if self.token:
-            h["Authorization"] = "Bearer " + self.token
+            if self.auth_header_template:
+                header_line = self.auth_header_template.replace("{token}", self.token)
+                if ":" in header_line:
+                    name, _, value = header_line.partition(":")
+                    h[name.strip()] = value.strip()
+                else:
+                    h["Authorization"] = header_line
+            else:
+                h["Authorization"] = "Bearer " + self.token
         return h
 
     def _throttle(self):
@@ -509,6 +523,9 @@ class Auth:
                 self.session = json.loads(self.session_file.read_text("utf-8"))
                 if self.session.get("token"):
                     self.client.token = self.session["token"]
+                if self.session.get("auth_header_template"):
+                    self.client.auth_header_template = \
+                        self.session["auth_header_template"]
             except (OSError, ValueError):
                 self.session = {}
         return self.session
@@ -529,6 +546,9 @@ class Auth:
 
     def login_candidates(self, api_map: dict) -> list:
         cands: list = []
+        known = (api_map.get("auth") or {}).get("login_endpoint")
+        if known:
+            cands.append(known)
         for ep in (api_map.get("endpoints") or []):
             p = ep.get("path", "")
             if LOGIN_PATH_HINT_RE.search(p) and p not in cands:
@@ -538,6 +558,9 @@ class Auth:
 
     def me_candidates(self, api_map: dict) -> list:
         cands: list = []
+        known = (api_map.get("auth") or {}).get("me_endpoint")
+        if known:
+            cands.append(known)
         for ep in (api_map.get("endpoints") or []):
             p = ep.get("path", "")
             if ME_PATH_HINT_RE.search(p) and p not in cands:
@@ -548,6 +571,9 @@ class Auth:
     def login(self, email: str, password: str, api_map: dict | None = None,
               login_field: str = "email", verbose: bool = False) -> dict:
         api_map = api_map or {}
+        known_fields = (api_map.get("auth") or {}).get("login_fields") or []
+        if login_field in (None, "", "email") and known_fields:
+            login_field = known_fields[0]  # из HAR: реальное имя поля логина
         tried: list = []
         last_error: str = ""
         for path in self.login_candidates(api_map):
@@ -570,6 +596,7 @@ class Auth:
             if tokens:
                 tokens.sort(key=lambda t: (t[0], t[1]))
                 priority, key_path, value = tokens[0]
+                header_tmpl = (api_map.get("auth") or {}).get("auth_header_template")
                 self.session = {
                     "base_url": self.client.base_url,
                     "email": email,
@@ -577,12 +604,17 @@ class Auth:
                     "login_field": login_field,
                     "token_path": key_path,
                     "token": value,
+                    "auth_header_template": header_tmpl or "",
                     "saved_at": now_iso(),
                 }
                 self.client.token = value
+                if header_tmpl:
+                    self.client.auth_header_template = header_tmpl
                 self.save()
                 print(f"[ok] Вход выполнен через {path}; токен найден в поле "
                       f"'{key_path}' и сохранён в {self.session_file}")
+                if header_tmpl:
+                    print(f"[ok] Заголовок авторизации: {header_tmpl}")
                 return self.session
             err = (resp.json or {})
             code = (err.get("error") or {}).get("code") or f"HTTP_{resp.status}"
@@ -789,6 +821,17 @@ class Recon:
             return json.loads(self.map_file.read_text("utf-8"))
         except (OSError, ValueError):
             return {}
+
+    def run_from_har(self, har_path: str, host: str = "inventory.f2c.ru") -> dict:
+        """Строит карту API из HAR-лога вместо разбора бандлов."""
+        if har2apimap is None:
+            raise SystemExit("Анализатор HAR (har2apimap.py) не найден рядом "
+                             "со скриптом")
+        print(f"[*] Анализируем HAR: {har_path} (host={host}) ...")
+        api_map = har2apimap.analyze_har(har_path, host, self.verbose)
+        self.save_map(api_map)
+        print(f"[*] Карта API сохранена: {self.map_file}")
+        return api_map
 
     def run(self, save_assets: bool = True) -> dict:
         print(f"[*] Получаем страницу входа с {self.client.base_url} ...")
@@ -1137,6 +1180,11 @@ def build_parser() -> argparse.ArgumentParser:
 
     sp = sub.add_parser("recon", help="скачать JS-бандлы и составить карту API")
     sp.add_argument("--no-save-assets", action="store_true")
+    sp.add_argument("--har", dest="har", default="",
+                    help="вместо бандлов: построить карту из HAR-лога "
+                         "(Network -> Export HAR)")
+    sp.add_argument("--har-host", default="inventory.f2c.ru",
+                    help="фильтр хоста для --har")
 
     sp = sub.add_parser("login", help="войти и сохранить токен")
     sp.add_argument("--email", default=os.environ.get("F2C_EMAIL", ""))
@@ -1252,6 +1300,12 @@ def main(argv=None) -> int:
 
     if cmd == "recon":
         recon = Recon(client, cfg, verbose=args.verbose)
+        if getattr(args, "har", ""):
+            api_map = recon.run_from_har(args.har, args.har_host)
+            har2apimap.print_report(api_map)
+            print("\nКарта сохранена и используется командами login/status/"
+                  "list и т.д.")
+            return 0
         api_map = recon.run(save_assets=not args.no_save_assets)
         print(f"\nНайдено эндпоинтов: {len(api_map.get('endpoints', []))}")
         for ep in api_map.get("endpoints", []):
