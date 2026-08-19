@@ -41,6 +41,7 @@ from fastapi.templating import Jinja2Templates
 
 import f2c_inventory as core
 import f2c_ops as ops
+from webui import docs_store
 
 BASE_URL = os.environ.get("F2C_BASE_URL", "https://inventory.f2c.ru")
 CFG_DIR = Path(os.environ.get(
@@ -48,7 +49,8 @@ CFG_DIR = Path(os.environ.get(
 SAMPLE_MAP = ROOT / "webui" / "sample_api_map.json"
 DEMO = "127.0.0.1" in BASE_URL or "localhost" in BASE_URL
 
-app = FastAPI(title="F2C Инвентаризация")
+app = FastAPI(title="F2C Инвентаризация", docs_url="/api/docs",
+              redoc_url="/api/redoc", openapi_url="/api/openapi.json")
 app.mount("/static", StaticFiles(directory=str(ROOT / "webui" / "static")),
           name="static")
 templates = Jinja2Templates(directory=str(ROOT / "webui" / "templates"))
@@ -177,6 +179,41 @@ def dashboard(request: Request):
                   address_count=len(addresses), equipment_count=len(equipment),
                   active_inventories=active_inventories, statuses=statuses,
                   recent=recent)
+
+
+# --------------------------------------------------------------------------
+# Встроенная база знаний
+# --------------------------------------------------------------------------
+
+def docs_db_path():
+    return CFG_DIR / "docs.db"
+
+
+@app.get("/docs", response_class=HTMLResponse)
+def documentation(request: Request, q: str = "", category: str = ""):
+    if not logged(request):
+        return redirect("/login")
+    articles = docs_store.list_articles(docs_db_path(), q.strip(), category)
+    return render(request, "docs.html", articles=articles,
+                  categories=docs_store.categories(docs_db_path()),
+                  query=q.strip(), selected_category=category)
+
+
+@app.get("/docs/{slug}", response_class=HTMLResponse)
+def documentation_article(request: Request, slug: str):
+    if not logged(request):
+        return redirect("/login")
+    article = docs_store.get_article(docs_db_path(), slug)
+    if not article:
+        return redirect("/docs", "Статья не найдена", "err")
+    return render(request, "docs_article.html", article=article)
+
+
+@app.get("/api/ui/docs/search")
+def documentation_search(request: Request, q: str = ""):
+    if not logged(request):
+        return JSONResponse({"error": "unauthorized"}, status_code=401)
+    return JSONResponse(docs_store.list_articles(docs_db_path(), q.strip()))
 
 
 @app.get("/login", response_class=HTMLResponse)

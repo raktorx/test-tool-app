@@ -1,5 +1,5 @@
-const CACHE = 'f2c-shell-v1';
-const SHELL = ['/static/style.css', '/static/app.js', '/static/icon.svg', '/static/icon-192.png', '/static/icon-512.png', '/manifest.webmanifest', '/static/offline.html'];
+const CACHE = 'f2c-shell-v2';
+const SHELL = ['/static/style.css', '/static/docs.css', '/static/app.js', '/static/icon.svg', '/static/icon-192.png', '/static/icon-512.png', '/manifest.webmanifest', '/static/offline.html'];
 self.addEventListener('install', event => {
   event.waitUntil(caches.open(CACHE).then(cache => cache.addAll(SHELL)).then(() => self.skipWaiting()));
 });

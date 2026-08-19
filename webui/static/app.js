@@ -33,6 +33,26 @@
     });
   });
 
+  document.querySelectorAll('.copy-code').forEach(button => {
+    button.addEventListener('click', async () => {
+      const code = button.closest('.code-block')?.querySelector('code')?.textContent || '';
+      try {
+        await navigator.clipboard.writeText(code);
+        button.textContent = 'Скопировано ✓';
+        setTimeout(() => button.textContent = 'Копировать', 1800);
+      } catch (_) {
+        button.textContent = 'Выделите вручную';
+      }
+    });
+  });
+
+  addEventListener('keydown', event => {
+    if (event.key === '/' && !event.target.matches('input, textarea, select')) {
+      event.preventDefault();
+      location.href = '/equipment';
+    }
+  });
+
   const networkLabel = document.getElementById('network-label');
   const renderNetwork = () => {
     document.body.classList.toggle('offline', !navigator.onLine);

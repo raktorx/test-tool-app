@@ -1,0 +1,40 @@
+{% extends "base.html" %}
+{% block title %}{{ article.title }} · F2C Hub{% endblock %}
+{% block header_title %}Документация{% endblock %}
+{% block content %}
+<nav class="breadcrumbs" aria-label="Хлебные крошки"><a href="/docs">Документация</a><span>›</span><span>{{ article.category }}</span><span>›</span><b>{{ article.title }}</b></nav>
+<div class="article-layout">
+  <article class="guide">
+    <header class="guide-header">
+      <span class="doc-icon large">{{ article.icon }}</span>
+      <p class="eyebrow">{{ article.category }}</p>
+      <h1>{{ article.title }}</h1>
+      <p>{{ article.summary }}</p>
+    </header>
+    <div class="guide-body">
+      {% for section in article.sections %}
+      <section id="section-{{ loop.index }}">
+        <h2><span>{{ '%02d'|format(loop.index) }}</span>{{ section.title }}</h2>
+        {% if section.text %}<p>{{ section.text }}</p>{% endif %}
+        {% if section.note %}<div class="callout note"><b>i</b><div><strong>Подсказка</strong><p>{{ section.note }}</p></div></div>{% endif %}
+        {% if section.warning %}<div class="callout warning"><b>!</b><div><strong>Обратите внимание</strong><p>{{ section.warning }}</p></div></div>{% endif %}
+        {% if section.code %}
+        <div class="code-block">
+          <div class="code-head"><span>{{ section.language or 'text' }}</span><button type="button" class="copy-code">Копировать</button></div>
+          <pre><code>{{ section.code }}</code></pre>
+        </div>
+        {% endif %}
+      </section>
+      {% endfor %}
+    </div>
+    <footer class="guide-footer"><div><strong>Материал был полезен?</strong><span>Документация хранится локально и доступна вашей команде.</span></div><a class="btn btn-secondary" href="/docs">← К базе знаний</a></footer>
+  </article>
+  <aside class="article-toc">
+    <p class="eyebrow">В этой статье</p>
+    <nav>
+      {% for section in article.sections %}<a href="#section-{{ loop.index }}">{{ section.title }}</a>{% endfor %}
+    </nav>
+    <div class="toc-help"><span>?</span><strong>Есть проблема?</strong><a href="/docs/troubleshooting">Открыть диагностику →</a></div>
+  </aside>
+</div>
+{% endblock %}

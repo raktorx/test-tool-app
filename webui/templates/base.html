@@ -9,6 +9,7 @@
 <link rel="manifest" href="/manifest.webmanifest">
 <link rel="icon" href="/static/icon.svg" type="image/svg+xml">
 <link rel="stylesheet" href="/static/style.css">
+<link rel="stylesheet" href="/static/docs.css">
 <script src="/static/app.js" defer></script>
 </head>
 <body class="{{ 'auth-page' if request.url.path == '/login' else '' }}">
@@ -37,6 +38,9 @@
       </a>
       <a href="/inventories" class="{{ 'active' if request.url.path.startswith('/inventories') else '' }}">
         <span class="nav-icon">✓</span><span>Инвентаризации</span>
+      </a>
+      <a href="/docs" class="{{ 'active' if request.url.path.startswith('/docs') else '' }}">
+        <span class="nav-icon">?</span><span>Документация</span>
       </a>
       <p class="nav-label nav-label-second">Быстрые действия</p>
       <a href="/equipment/new" class="{{ 'active' if request.url.path == '/equipment/new' else '' }}">
