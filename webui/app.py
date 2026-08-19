@@ -35,7 +35,7 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from fastapi import FastAPI, File, Form, Request, UploadFile
-from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
@@ -126,9 +126,57 @@ def api_error_response(request, e, back):
 # Авторизация
 # --------------------------------------------------------------------------
 
+@app.get("/manifest.webmanifest", include_in_schema=False)
+def manifest():
+    return FileResponse(ROOT / "webui" / "static" / "manifest.webmanifest",
+                        media_type="application/manifest+json")
+
+
+@app.get("/sw.js", include_in_schema=False)
+def service_worker():
+    response = FileResponse(ROOT / "webui" / "static" / "sw.js",
+                            media_type="application/javascript")
+    response.headers["Service-Worker-Allowed"] = "/"
+    response.headers["Cache-Control"] = "no-cache"
+    return response
+
+
 @app.get("/", response_class=HTMLResponse)
 def index(request: Request):
-    return redirect("/organizations")
+    return redirect("/dashboard")
+
+
+@app.get("/dashboard", response_class=HTMLResponse)
+def dashboard(request: Request):
+    """Operational overview assembled through the same domain layer as CLI."""
+    if not logged(request):
+        return redirect("/login")
+    client, auth, api_map = ensure_setup()
+    try:
+        orgs = ops.list_organizations(client, api_map)
+        addresses = ops.collect_addresses(client, api_map)
+        equipment = ops.equipment_rows(client, api_map, all_pages=True)
+        inv_resp, _ = ops.try_candidates(
+            client, ops._dedupe(ops._map_candidates(
+                api_map, re.compile(r"/inventories$", re.I), "GET")
+                + [("GET", "/api/inventories")]))
+        inventories = inv_resp.as_list()
+    except core.ApiError as e:
+        return err(request, e, "/dashboard")
+
+    statuses = {}
+    for item in equipment:
+        status = str(item.get("status") or "unknown").lower()
+        statuses[status] = statuses.get(status, 0) + 1
+    active_inventories = sum(
+        1 for item in inventories if str(item.get("status", "")).lower() == "active")
+    # Most APIs return the registry in creation order. Avoid assuming that IDs
+    # are numeric (some installations use UUIDs).
+    recent = list(reversed(equipment[-5:]))
+    return render(request, "dashboard.html", org_count=len(orgs),
+                  address_count=len(addresses), equipment_count=len(equipment),
+                  active_inventories=active_inventories, statuses=statuses,
+                  recent=recent)
 
 
 @app.get("/login", response_class=HTMLResponse)
@@ -146,7 +194,7 @@ def login_post(request: Request, email: str = Form(...),
         auth.login(email.strip(), password, api_map)
     except SystemExit as e:
         return render(request, "login.html", error=str(e))
-    resp = RedirectResponse("/organizations?flash=" + urllib.parse.quote(
+    resp = RedirectResponse("/dashboard?flash=" + urllib.parse.quote(
         "ok:Вход выполнен"), status_code=303)
     resp.set_cookie("f2c_ui", "1", httponly=True, samesite="lax")
     return resp

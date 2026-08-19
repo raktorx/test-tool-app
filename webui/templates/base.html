@@ -1,43 +1,89 @@
 <!doctype html>
-<html lang="ru">
+<html lang="ru" data-theme="light">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>{% block title %}F2C · Инвентаризация{% endblock %}</title>
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#185c4a">
+<meta name="description" content="F2C Hub — единое рабочее пространство для учёта оборудования и инвентаризаций">
+<title>{% block title %}F2C Hub{% endblock %}</title>
+<link rel="manifest" href="/manifest.webmanifest">
+<link rel="icon" href="/static/icon.svg" type="image/svg+xml">
 <link rel="stylesheet" href="/static/style.css">
+<script src="/static/app.js" defer></script>
 </head>
-<body>
-<header class="topbar">
-  <div class="brand"><a href="/">🏷 F2C <span>· учёт оборудования</span></a></div>
-  <nav>
-    <a href="/organizations">Организации</a>
-    <a href="/addresses">Адреса</a>
-    <a href="/equipment">Оборудование</a>
-    <a href="/equipment/new" class="accent">+ Добавить</a>
-    <a href="/inventories">Инвентаризации</a>
-  </nav>
-  <div class="user">
-    {% if user_email %}
-      <span class="who">{{ user_email }}</span> · <a href="/logout">Выйти</a>
-    {% else %}
-      <a href="/login">Войти</a>
+<body class="{{ 'auth-page' if request.url.path == '/login' else '' }}">
+<div class="app-shell">
+  <aside class="sidebar" id="sidebar">
+    <a class="brand" href="/dashboard" aria-label="F2C Hub — главная">
+      <span class="brand-mark" aria-hidden="true">
+        <svg viewBox="0 0 32 32"><path d="M7 8.5 16 3l9 5.5v15L16 29l-9-5.5v-15Z"/><path d="m10.5 11 5.5 3.2 5.5-3.2M16 14.2V25"/></svg>
+      </span>
+      <span><strong>F2C</strong><small>HUB</small></span>
+    </a>
+
+    <nav class="main-nav" aria-label="Основная навигация">
+      <p class="nav-label">Рабочее пространство</p>
+      <a href="/dashboard" class="{{ 'active' if request.url.path == '/dashboard' else '' }}">
+        <span class="nav-icon">⌂</span><span>Обзор</span>
+      </a>
+      <a href="/organizations" class="{{ 'active' if request.url.path.startswith('/organizations') else '' }}">
+        <span class="nav-icon">◫</span><span>Организации</span>
+      </a>
+      <a href="/addresses" class="{{ 'active' if request.url.path == '/addresses' else '' }}">
+        <span class="nav-icon">⌖</span><span>Адреса</span>
+      </a>
+      <a href="/equipment" class="{{ 'active' if request.url.path.startswith('/equipment') and request.url.path != '/equipment/new' else '' }}">
+        <span class="nav-icon">□</span><span>Оборудование</span>
+      </a>
+      <a href="/inventories" class="{{ 'active' if request.url.path.startswith('/inventories') else '' }}">
+        <span class="nav-icon">✓</span><span>Инвентаризации</span>
+      </a>
+      <p class="nav-label nav-label-second">Быстрые действия</p>
+      <a href="/equipment/new" class="{{ 'active' if request.url.path == '/equipment/new' else '' }}">
+        <span class="nav-icon">＋</span><span>Добавить объект</span>
+      </a>
+    </nav>
+
+    <div class="sidebar-bottom">
+      <button class="install-btn" id="install-app" hidden><span>⇩</span> Установить приложение</button>
+      <div class="sync-state"><span class="status-dot"></span><span id="network-label">Система доступна</span></div>
+      {% if user_email %}
+      <div class="profile">
+        <span class="avatar">{{ user_email[:1]|upper }}</span>
+        <span class="profile-copy"><strong>{{ user_email.split('@')[0] }}</strong><small>{{ user_email }}</small></span>
+        <a href="/logout" class="logout" title="Выйти" aria-label="Выйти">↗</a>
+      </div>
+      {% endif %}
+    </div>
+  </aside>
+
+  <div class="workspace">
+    <header class="mobile-bar">
+      <button class="icon-btn" id="menu-toggle" aria-label="Открыть меню" aria-expanded="false">☰</button>
+      <a class="mobile-brand" href="/dashboard">F2C <b>HUB</b></a>
+      <button class="icon-btn" data-theme-toggle aria-label="Переключить тему">◐</button>
+    </header>
+    <header class="topbar">
+      <div>
+        <p class="eyebrow">F2C · Управление активами</p>
+        <p class="topbar-title">{% block header_title %}Рабочее пространство{% endblock %}</p>
+      </div>
+      <div class="top-actions">
+        <a class="search-link" href="/equipment"><span>⌕</span> Поиск по реестру <kbd>/</kbd></a>
+        <button class="icon-btn" data-theme-toggle aria-label="Переключить тему" title="Тема">◐</button>
+        <a class="btn btn-primary btn-compact" href="/equipment/new">＋ Добавить объект</a>
+      </div>
+    </header>
+
+    {% if flash %}
+    <div class="toast flash {{ flash[0] }}" role="status"><span>{{ '✓' if flash[0] == 'ok' else '!' }}</span>{{ flash[1] }}<button aria-label="Закрыть">×</button></div>
     {% endif %}
+
+    <main class="container">
+      {% block content %}{% endblock %}
+    </main>
   </div>
-</header>
-
-{% if flash %}
-<div class="flash {{ flash[0] }}">{{ flash[1] }}</div>
-{% endif %}
-
-<main class="container">
-{% block content %}{% endblock %}
-</main>
-
-<footer class="footer">
-  {% if demo %}
-    <span class="badge-demo">демо-режим: данные от мок-бэкенда (пароль «secret»)</span>
-  {% endif %}
-  GUI работает поверх ядра f2c_ops: candidate trial, авто-refresh токена, карта api_map.json
-</footer>
+</div>
+<div class="sidebar-scrim" id="sidebar-scrim"></div>
 </body>
 </html>
