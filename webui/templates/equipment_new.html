@@ -1,0 +1,71 @@
+{% extends "base.html" %}
+{% block title %}Добавить оборудование · F2C{% endblock %}
+{% block content %}
+<h1>Мастер добавления оборудования</h1>
+<p class="sub">Шаги: организация → адрес (ленивая загрузка) → поля карточки → dry-run предпросмотр</p>
+<div class="panel" style="max-width: 620px;">
+  <form method="post" action="/equipment/new">
+    <label>Организация *</label>
+    <select id="org" name="org" required>
+      <option value="">— выберите организацию —</option>
+      {% for o in orgs %}
+      <option value="{{ o.get('id') }}">#{{ o.get('id') }} {{ o.get('name') or o.get('title') }}</option>
+      {% endfor %}
+    </select>
+
+    <label>Адрес размещения *</label>
+    <select id="address" name="address_id" required disabled>
+      <option value="">— сначала выберите организацию —</option>
+    </select>
+    <p class="hint" id="addr-hint">Адреса подгружаются после выбора организации (GET /api/organizations/{org}/addresses).</p>
+
+    <label>Название / модель *</label>
+    <input type="text" name="name" required placeholder="Ноутбук HP 250">
+
+    <div class="form-row">
+      <div><label>Серийный номер</label><input type="text" name="serial_number" placeholder="SN123"></div>
+      <div><label>Инвентарный номер</label><input type="text" name="inventory_number" placeholder="INV-1006"></div>
+      <div><label>Количество</label><input type="number" name="quantity" placeholder="1"></div>
+      <div><label>Комментарий</label><input type="text" name="comment" placeholder="каб. 12"></div>
+    </div>
+
+    <label class="check">
+      <input type="checkbox" name="dry_run" value="1">
+      Dry-run: показать итоговый JSON без отправки на сервер
+    </label>
+
+    <div style="margin-top: 18px; display: flex; gap: 10px;">
+      <button type="submit">Создать</button>
+      <a class="btn secondary" style="padding:9px 16px;" href="/equipment">Отмена</a>
+    </div>
+  </form>
+</div>
+<script>
+(function () {
+  var org = document.getElementById('org');
+  var addr = document.getElementById('address');
+  var hint = document.getElementById('addr-hint');
+  org.addEventListener('change', function () {
+    addr.disabled = true;
+    addr.innerHTML = '<option value="">загрузка…</option>';
+    if (!org.value) {
+      addr.innerHTML = '<option value="">— сначала выберите организацию —</option>';
+      return;
+    }
+    fetch('/api/ui/addresses?org_id=' + encodeURIComponent(org.value))
+      .then(function (r) { return r.json(); })
+      .then(function (list) {
+        addr.innerHTML = '<option value="">— выберите адрес —</option>' +
+          list.map(function (a) {
+            return '<option value="' + a.id + '">#' + a.id + ' ' + a.label + '</option>';
+          }).join('');
+        addr.disabled = false;
+        hint.textContent = 'Загружено адресов: ' + list.length + ' (через /api/ui/addresses).';
+      })
+      .catch(function () {
+        addr.innerHTML = '<option value="">не удалось загрузить</option>';
+      });
+  });
+})();
+</script>
+{% endblock %}

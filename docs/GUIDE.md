@@ -93,3 +93,9 @@ python3 f2c_inventory.py card 42 transfer --path /api/equipment/42/move \
 | `[err] UNAUTHORIZED: No token` | выполните `login` |
 | Сетевая ошибка TLS | `pip install curl_cffi` (клиент переключится на эмуляцию Chrome) или `--proxy` |
 | Поле в запросе не принимается | уточните тело через `-d '{"точное_поле": …}'` |
+
+## Дальше
+
+- [GUI_ARCHITECTURE.md](GUI_ARCHITECTURE.md) — архитектура и логика
+  графического интерфейса (слои, модули, автообновление токена,
+  candidate trial, ленивая загрузка, требования к реализации).

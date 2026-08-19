@@ -1522,8 +1522,8 @@ def main(argv=None) -> int:
     if cmd == "docs":
         base = Path(__file__).resolve().parent
         print("Документация по работе с инструментом:")
-        for f in ("README.md", "docs/GUIDE.md", "docs/ADDRESSES.md",
-                  "docs/EQUIPMENT.md", "docs/CARD.md"):
+        for f in ("README.md", "docs/GUIDE.md", "docs/GUI_ARCHITECTURE.md",
+                  "docs/ADDRESSES.md", "docs/EQUIPMENT.md", "docs/CARD.md"):
             p = base / f
             print(f"  {'[ok]' if p.exists() else '[!]'} {p}")
         print("\nКратко о командах: f2c_inventory.py --help")

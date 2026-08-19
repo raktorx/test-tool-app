@@ -1,0 +1,41 @@
+{% extends "base.html" %}
+{% block title %}Поиск адресов · F2C{% endblock %}
+{% block content %}
+<h1>Поиск по адресам</h1>
+<p class="sub">Живой фильтр: ввод сужает список на лету (ранжирование score_record на сервере, мгновенный фильтр в браузере)</p>
+<div class="filters">
+  <input id="q" type="search" placeholder="город, улица, дом…" value="{{ query }}" autofocus>
+</div>
+<div class="panel">
+  <table id="addr-table">
+    <tr><th>ID</th><th>Адрес</th><th>Организация</th><th></th></tr>
+    {% for a in addresses %}
+    <tr data-search="{{ a.label|lower }} {{ a.org|lower }}">
+      <td class="mono">{{ a.id }}</td>
+      <td>{{ a.label }}</td>
+      <td>{{ a.org }}</td>
+      <td><a href="/equipment?address_id={{ a.id }}">Оборудование →</a></td>
+    </tr>
+    {% else %}
+    <tr id="empty"><td colspan="4">Ничего не найдено.</td></tr>
+    {% endfor %}
+  </table>
+</div>
+<script>
+(function () {
+  var input = document.getElementById('q');
+  var rows = document.querySelectorAll('#addr-table tr[data-search]');
+  input.addEventListener('input', function () {
+    var q = input.value.trim().toLowerCase();
+    var shown = 0;
+    rows.forEach(function (r) {
+      var hit = !q || r.getAttribute('data-search').indexOf(q) >= 0;
+      r.style.display = hit ? '' : 'none';
+      if (hit) shown++;
+    });
+    var empty = document.getElementById('empty');
+    if (empty) empty.style.display = shown ? 'none' : '';
+  });
+})();
+</script>
+{% endblock %}

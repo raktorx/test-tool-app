@@ -1,0 +1,33 @@
+{% extends "base.html" %}
+{% block title %}Оборудование · F2C{% endblock %}
+{% block content %}
+<h1>Реестр оборудования</h1>
+<p class="sub">Уровень 4: карточки техники. Пагинация — через fetch_all_pages (в ядре)</p>
+<div class="filters">
+  <form method="get" action="/equipment" style="display: flex; gap: 10px; flex-wrap: wrap;">
+    <input type="text" name="address_id" placeholder="ID адреса" value="{{ address_id }}">
+    <input type="text" name="inventory_id" placeholder="ID инвентаризации" value="{{ inventory_id }}">
+    <input type="search" name="q" placeholder="модель / серийный №…" value="{{ q }}">
+    <button type="submit">Фильтр</button>
+    <a class="btn secondary" style="padding:9px 16px;" href="/equipment">Сброс</a>
+  </form>
+</div>
+<div class="panel">
+  <table>
+    <tr><th>ID</th><th>Модель</th><th>Серийный №</th><th>Инв. №</th><th>Адрес</th><th>Статус</th><th></th></tr>
+    {% for r in rows %}
+    <tr>
+      <td class="mono">{{ r.get('id') }}</td>
+      <td><a href="/equipment/{{ r.get('id') }}">{{ r.get('name') or '—' }}</a></td>
+      <td class="mono">{{ r.get('serial_number') or '—' }}</td>
+      <td class="mono">{{ r.get('inventory_number') or '—' }}</td>
+      <td class="mono">{{ r.get('address_id') or '—' }}</td>
+      <td><span class="badge {{ r.get('status') }}">{{ r.get('status') }}</span></td>
+      <td><a href="/equipment/{{ r.get('id') }}">карточка →</a></td>
+    </tr>
+    {% else %}
+    <tr><td colspan="7">Оборудование не найдено.</td></tr>
+    {% endfor %}
+  </table>
+</div>
+{% endblock %}

@@ -1,0 +1,29 @@
+{% extends "base.html" %}
+{% block title %}Фото · Карточка #{{ card_id }} · F2C{% endblock %}
+{% block content %}
+<h1>Фото · карточка #{{ card_id }}</h1>
+<p class="sub">Медиа-галерея: список через GET /api/equipment/{id}/photos, загрузка — multipart/form-data</p>
+{% include "_tabs.html" %}
+  <h2>Галерея</h2>
+  <table>
+    <tr><th>ID</th><th>Подпись</th><th>URL</th></tr>
+    {% for p in photos %}
+    <tr>
+      <td class="mono">{{ p.get('id') }}</td>
+      <td>{{ p.get('label') or '—' }}</td>
+      <td class="mono" style="word-break: break-all;">{{ p.get('url') }}</td>
+    </tr>
+    {% else %}
+    <tr><td colspan="3">Фотографий нет.</td></tr>
+    {% endfor %}
+  </table>
+
+  <h2>Загрузка нового фото</h2>
+  <form method="post" action="/equipment/{{ card_id }}/photos" enctype="multipart/form-data">
+    <label>Файл изображения</label>
+    <input type="file" name="file" accept="image/*" required>
+    <label class="check"><input type="checkbox" name="dry_run" value="1"> Dry-run</label>
+    <div style="margin-top: 12px;"><button type="submit">Загрузить (photo-add)</button></div>
+  </form>
+</div>
+{% endblock %}
