@@ -1,0 +1,9 @@
+# Результаты тестов (локальные артефакты)
+tests/out/
+
+# Артефакты аудита, создаваемые самим скриптом
+page_*.html
+headers_*.txt
+report_*.json
+error.log
+error.log.1
