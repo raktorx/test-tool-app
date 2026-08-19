@@ -1,4 +1,15 @@
-# Результаты тестов (локальные артефакты)
+# Python (f2c_inventory)
+__pycache__/
+*.pyc
+.env
+.venv/
+session.json
+states/
+bundles/
+*.csv
+!examples/*.csv
+
+# Результаты тестов (локальные артефакты) — analyzer.sh
 tests/out/
 
 # Артефакты аудита, создаваемые самим скриптом
