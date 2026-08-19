@@ -4,7 +4,7 @@ import json
 import sqlite3
 from pathlib import Path
 
-SCHEMA_VERSION = "1"
+SCHEMA_VERSION = "2"
 
 ARTICLES = [
     {
@@ -18,7 +18,8 @@ ARTICLES = [
             {"title": "1. Подготовка", "text": "Требуется Python 3.10 или новее. Выполните команды из корня репозитория. Виртуальное окружение изолирует зависимости приложения.", "code": "python3 -m venv .venv\nsource .venv/bin/activate\npip install -r requirements.txt", "language": "bash"},
             {"title": "2. Запуск демо", "text": "Мок-сервер содержит организации, адреса, инвентаризации и карточки оборудования. Он подходит для безопасного знакомства со всеми функциями.", "code": "python3 webui/mock_api.py &\nF2C_BASE_URL=http://127.0.0.1:8799 \\\nF2C_CONFIG_DIR=/tmp/f2c-gui-config \\\nuvicorn webui.app:app --host 0.0.0.0 --port 8000", "language": "bash", "note": "Откройте http://localhost:8000. Укажите любую почту и пароль secret."},
             {"title": "3. Подключение к F2C", "text": "Для рабочего режима замените адрес мок-сервера на inventory.f2c.ru. Сессия и карта API хранятся в ~/.config/f2c-inventory с закрытыми правами.", "code": "F2C_BASE_URL=https://inventory.f2c.ru \\\nuvicorn webui.app:app --host 0.0.0.0 --port 8000", "language": "bash", "warning": "Не публикуйте session.json и не передавайте токены в командной строке или чатах."},
-            {"title": "4. Проверка", "text": "После входа откройте «Обзор». Счётчики должны показать организации, адреса и оборудование. Затем откройте любую карточку из реестра."}
+            {"title": "4. Запуск для конкретной инвентаризации", "text": "UUID берётся из кабинетного URL /cabinet/inventories/{uuid}. Базовым URL при этом остаётся origin сервиса — кабинетный путь нельзя передавать в F2C_BASE_URL.", "code": "F2C_BASE_URL=https://inventory.f2c.ru \\\nF2C_DEFAULT_INVENTORY_ID=69705c06-d8c4-475b-bd20-354c79b02c55 \\\nuvicorn webui.app:app --host 0.0.0.0 --port 8000", "language": "bash", "note": "После входа откроется реестр, отфильтрованный по указанной инвентаризации."},
+            {"title": "5. Проверка", "text": "После входа откройте «Обзор». Счётчики должны показать организации, адреса и оборудование. Затем откройте любую карточку из реестра."}
         ]
     },
     {

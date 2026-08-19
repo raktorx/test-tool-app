@@ -3,6 +3,9 @@
 {% block content %}
 <h1>Реестр оборудования</h1>
 <p class="sub">Уровень 4: карточки техники. Пагинация — через fetch_all_pages (в ядре)</p>
+{% if inventory_id %}
+<div class="scope-banner"><span>✓</span><div><strong>Фильтр по инвентаризации</strong><small>{{ inventory_id }}</small></div><a href="/equipment">Показать весь реестр</a></div>
+{% endif %}
 <div class="filters">
   <form method="get" action="/equipment" style="display: flex; gap: 10px; flex-wrap: wrap;">
     <input type="text" name="address_id" placeholder="ID адреса" value="{{ address_id }}">

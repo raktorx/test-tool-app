@@ -43,7 +43,8 @@ import f2c_inventory as core
 import f2c_ops as ops
 from webui import docs_store
 
-BASE_URL = os.environ.get("F2C_BASE_URL", "https://inventory.f2c.ru")
+BASE_URL = os.environ.get("F2C_BASE_URL", "https://inventory.f2c.ru").rstrip("/")
+DEFAULT_INVENTORY_ID = os.environ.get("F2C_DEFAULT_INVENTORY_ID", "").strip()
 CFG_DIR = Path(os.environ.get(
     "F2C_CONFIG_DIR", str(Path.home() / ".config" / "f2c-inventory")))
 SAMPLE_MAP = ROOT / "webui" / "sample_api_map.json"
@@ -100,7 +101,8 @@ def render(request, name, **ctx):
     return templates.TemplateResponse(
         request=request, name=name,
         context={"user_email": auth.session.get("email"),
-                 "flash": flash(request), "demo": DEMO, **ctx})
+                 "flash": flash(request), "demo": DEMO,
+                 "default_inventory_id": DEFAULT_INVENTORY_ID, **ctx})
 
 
 def redirect(path, msg="", kind="ok"):
@@ -124,6 +126,13 @@ def api_error_response(request, e, back):
     return err(request, e, back)
 
 
+def start_path():
+    """Initial workspace, optionally scoped to a configured inventory."""
+    if DEFAULT_INVENTORY_ID:
+        return "/equipment?inventory_id=" + urllib.parse.quote(DEFAULT_INVENTORY_ID)
+    return "/dashboard"
+
+
 # --------------------------------------------------------------------------
 # Авторизация
 # --------------------------------------------------------------------------
@@ -145,7 +154,7 @@ def service_worker():
 
 @app.get("/", response_class=HTMLResponse)
 def index(request: Request):
-    return redirect("/dashboard")
+    return redirect(start_path())
 
 
 @app.get("/dashboard", response_class=HTMLResponse)
@@ -219,7 +228,7 @@ def documentation_search(request: Request, q: str = ""):
 @app.get("/login", response_class=HTMLResponse)
 def login_page(request: Request):
     if logged(request):
-        return redirect("/organizations")
+        return redirect(start_path())
     return render(request, "login.html", error="")
 
 
@@ -231,8 +240,10 @@ def login_post(request: Request, email: str = Form(...),
         auth.login(email.strip(), password, api_map)
     except SystemExit as e:
         return render(request, "login.html", error=str(e))
-    resp = RedirectResponse("/dashboard?flash=" + urllib.parse.quote(
-        "ok:Вход выполнен"), status_code=303)
+    target = start_path()
+    target += ("&" if "?" in target else "?") + "flash=" + urllib.parse.quote(
+        "ok:Вход выполнен")
+    resp = RedirectResponse(target, status_code=303)
     resp.set_cookie("f2c_ui", "1", httponly=True, samesite="lax")
     return resp
 

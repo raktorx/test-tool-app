@@ -33,6 +33,9 @@ button, a { -webkit-tap-highlight-color: transparent; }
 .main-nav a:hover { color: #fff; background: #ffffff0d; }
 .main-nav a.active { color: #fff; background: #ffffff17; box-shadow: inset 3px 0 #71c7a8; }
 .nav-icon { width: 22px; font-size: 19px; line-height: 1; text-align: center; font-family: system-ui,sans-serif; }
+.main-nav .scope-link { height:48px;color:#d6e8e1;background:#ffffff0b;border:1px solid #ffffff10; }
+.main-nav .scope-link span:nth-child(2) { min-width:0; }
+.main-nav .scope-link small { display:block;color:#789f90;font:8px ui-monospace,monospace;margin-top:1px; }
 .sidebar-bottom { margin-top: auto; }
 .install-btn { width: 100%; color: #cde4da; background: #ffffff0b; border: 1px solid #ffffff1c; border-radius: 9px; padding: 9px; margin-bottom: 12px; cursor: pointer; }
 .sync-state { display: flex; align-items: center; gap: 9px; color: #85aa9c; font-size: 11px; padding: 0 10px 14px; border-bottom: 1px solid #ffffff16; }
@@ -107,6 +110,7 @@ tbody tr:hover td { background: color-mix(in srgb,var(--accent-2) 45%,transparen
 /* Shared list and form screens */
 .grid { display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:14px; }.card { background:var(--panel);border:1px solid var(--border);border-radius:12px;padding:17px; }.card h3 { margin:0 0 5px;font-size:13px; }.card .meta,.hint { color:var(--muted);font-size:10px; }.card .go { margin-top:11px;font-size:10px;font-weight:700; }
 .filters { display:flex;gap:9px;margin-bottom:15px;flex-wrap:wrap; }.filters form { width:100%; }
+.scope-banner{display:flex;align-items:center;gap:10px;padding:11px 13px;margin:-7px 0 15px;color:var(--accent);background:var(--accent-2);border:1px solid color-mix(in srgb,var(--accent) 24%,var(--border));border-radius:9px}.scope-banner>span{width:25px;height:25px;display:grid;place-items:center;background:var(--panel);border-radius:50%;font-weight:800}.scope-banner>div{min-width:0;flex:1}.scope-banner strong,.scope-banner small{display:block}.scope-banner strong{font-size:10px}.scope-banner small{overflow:hidden;text-overflow:ellipsis;color:var(--muted);font:8px ui-monospace,monospace}.scope-banner>a{font-size:9px;font-weight:700}
 input,select,textarea { width:100%;padding:10px 11px;color:var(--text);background:var(--panel2);border:1px solid var(--border);border-radius:8px;outline:none;font-size:11px;transition:.15s; }
 input:focus,select:focus,textarea:focus { border-color:var(--accent);box-shadow:0 0 0 3px color-mix(in srgb,var(--accent) 14%,transparent); }
 label { display:block;margin:11px 0 4px;color:var(--muted);font-size:10px;font-weight:600; }

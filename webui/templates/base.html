@@ -39,6 +39,11 @@
       <a href="/inventories" class="{{ 'active' if request.url.path.startswith('/inventories') else '' }}">
         <span class="nav-icon">✓</span><span>Инвентаризации</span>
       </a>
+      {% if default_inventory_id %}
+      <a href="/equipment?inventory_id={{ default_inventory_id|urlencode }}" class="scope-link" title="{{ default_inventory_id }}">
+        <span class="nav-icon">↳</span><span>Текущая инвентаризация<small>{{ default_inventory_id[:8] }}…</small></span>
+      </a>
+      {% endif %}
       <a href="/docs" class="{{ 'active' if request.url.path.startswith('/docs') else '' }}">
         <span class="nav-icon">?</span><span>Документация</span>
       </a>
