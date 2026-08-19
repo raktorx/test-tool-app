@@ -1,0 +1,61 @@
+{% extends "base.html" %}
+{% block title %}Документация · F2C Hub{% endblock %}
+{% block header_title %}Документация{% endblock %}
+{% block content %}
+<section class="docs-hero">
+  <div>
+    <p class="eyebrow">Центр знаний F2C Hub</p>
+    <h1>Как можем помочь?</h1>
+    <p>Руководства, инструкции и готовые скрипты — прямо в приложении.</p>
+  </div>
+  <form class="docs-search" method="get" action="/docs">
+    <span>⌕</span>
+    <input type="search" name="q" value="{{ query }}" placeholder="Найти статью, команду или ошибку…" autocomplete="off">
+    {% if selected_category %}<input type="hidden" name="category" value="{{ selected_category }}">{% endif %}
+    <button type="submit">Найти</button>
+  </form>
+</section>
+
+<nav class="category-tabs" aria-label="Категории документации">
+  <a href="/docs{% if query %}?q={{ query|urlencode }}{% endif %}" class="{{ 'active' if not selected_category else '' }}">Все материалы</a>
+  {% for cat in categories %}
+  <a href="/docs?category={{ cat|urlencode }}{% if query %}&q={{ query|urlencode }}{% endif %}" class="{{ 'active' if selected_category == cat else '' }}">{{ cat }}</a>
+  {% endfor %}
+</nav>
+
+{% if not query and not selected_category %}
+<section class="quickstart-banner">
+  <span class="quickstart-icon">▶</span>
+  <div><p class="eyebrow">Начните отсюда</p><h2>Запустите F2C Hub за 3 минуты</h2><p>Установите зависимости, поднимите демо и проверьте основные операции без риска для рабочих данных.</p></div>
+  <a class="btn btn-primary" href="/docs/quick-start">Открыть инструкцию →</a>
+</section>
+{% endif %}
+
+<div class="docs-heading">
+  <div><p class="eyebrow">{{ 'Результаты поиска' if query else 'База знаний' }}</p><h2>{% if query %}По запросу «{{ query }}»{% else %}Все материалы{% endif %}</h2></div>
+  <span>{{ articles|length }} {{ 'материал' if articles|length == 1 else 'материалов' }}</span>
+</div>
+
+<section class="docs-grid">
+  {% for article in articles %}
+  <a class="doc-card" href="/docs/{{ article.slug }}">
+    <span class="doc-icon">{{ article.icon }}</span>
+    <span class="doc-category">{{ article.category }}</span>
+    <h3>{{ article.title }}</h3>
+    <p>{{ article.summary }}</p>
+    <span class="doc-link">Открыть руководство <b>→</b></span>
+  </a>
+  {% else %}
+  <div class="panel docs-empty">
+    <span>⌕</span><h2>Ничего не найдено</h2>
+    <p class="sub">Попробуйте более короткий запрос или сбросьте категорию.</p>
+    <a class="btn btn-secondary" href="/docs">Показать все материалы</a>
+  </div>
+  {% endfor %}
+</section>
+
+<section class="support-strip">
+  <div><span>?</span><div><strong>Не нашли ответ?</strong><small>Соберите диагностику по инструкции перед обращением к администратору.</small></div></div>
+  <a href="/docs/troubleshooting">Диагностика проблем →</a>
+</section>
+{% endblock %}

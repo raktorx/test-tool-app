@@ -1,0 +1,22 @@
+{
+  "name": "F2C Hub — учёт оборудования",
+  "short_name": "F2C Hub",
+  "description": "Рабочее пространство для управления оборудованием и инвентаризациями",
+  "id": "/dashboard",
+  "start_url": "/dashboard",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#f4f6f4",
+  "theme_color": "#185c4a",
+  "lang": "ru",
+  "categories": ["business", "productivity"],
+  "icons": [
+    {"src": "/static/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any"},
+    {"src": "/static/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any"},
+    {"src": "/static/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable"}
+  ],
+  "shortcuts": [
+    {"name": "Добавить оборудование", "short_name": "Добавить", "url": "/equipment/new", "icons": [{"src": "/static/icon-192.png", "sizes": "192x192", "type": "image/png"}]},
+    {"name": "Открыть реестр", "short_name": "Реестр", "url": "/equipment", "icons": [{"src": "/static/icon-192.png", "sizes": "192x192", "type": "image/png"}]}
+  ]
+}
