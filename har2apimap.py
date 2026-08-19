@@ -95,7 +95,7 @@ def find_token(obj, path: str = ""):
     if isinstance(obj, dict):
         for k, v in obj.items():
             key_path = f"{path}.{k}" if path else str(k)
-            if isinstance(v, str) and len(v) >= 6 and v.strip():
+            if isinstance(v, str) and len(v) >= 4 and v.strip():
                 for i, rx in enumerate(TOKEN_KEY_PRIORITY):
                     if rx.search(str(k)):
                         found.append((i, key_path, v))

@@ -42,7 +42,7 @@ import textwrap
 import time
 from pathlib import Path
 
-VERSION = "0.1.0"
+VERSION = "0.2.0"
 DEFAULT_BASE_URL = "https://inventory.f2c.ru"
 
 try:
@@ -62,6 +62,8 @@ try:
     import har2apimap  # type: ignore  # анализатор HAR (лежит рядом)
 except ImportError:  # pragma: no cover
     har2apimap = None
+
+import f2c_ops  # noqa: E402  # доменные команды: addr / equipment / card
 
 # --------------------------------------------------------------------------
 # Утилиты
@@ -302,7 +304,7 @@ def find_token(obj, path: str = ""):
     if isinstance(obj, dict):
         for k, v in obj.items():
             key_path = f"{path}.{k}" if path else str(k)
-            if isinstance(v, str) and len(v) >= 6 and v.strip():
+            if isinstance(v, str) and len(v) >= 4 and v.strip():
                 for i, rx in enumerate(TOKEN_KEY_PRIORITY):
                     if rx.search(str(k)):
                         found.append((i, key_path, v))
@@ -338,6 +340,8 @@ class Client:
         self.token = token
         self.auth_header_template = auth_header_template
         self.extra_headers = dict(extra_headers or {})
+        self.on_401 = None          # колбэк обновления токена: () -> bool
+        self._auth_retrying = False
         self._last_request_ts = 0.0
         self._session = None
 
@@ -420,7 +424,7 @@ class Client:
 
     def request(self, method: str, path: str, params=None, json_body=None,
                 data=None, headers=None, retries: int | None = None,
-                raw: bool = False) -> ApiResponse | tuple:
+                raw: bool = False, files=None) -> ApiResponse | tuple:
         """Запрос к API. Возвращает ApiResponse (или (status, headers, text)
         при raw=True — для скачивания JS-бандлов)."""
         from urllib.parse import urljoin
@@ -450,6 +454,8 @@ class Client:
                     kwargs["json"] = json_body
                 if data is not None:
                     kwargs["data"] = data
+                if files is not None:
+                    kwargs["files"] = files
                 if self.proxy:
                     kwargs["proxies"] = {"http": self.proxy, "https": self.proxy}
                 if self.is_cffi:
@@ -458,6 +464,19 @@ class Client:
                 if raw:
                     return resp.status_code, dict(resp.headers), resp.text
                 parsed = ApiResponse(resp.status_code, url, resp.headers, resp.text)
+                # 401/403: пробуем обновить токен (refresh) и повторить запрос
+                if resp.status_code in (401, 403) and self.on_401 is not None \
+                        and not self._auth_retrying:
+                    self._auth_retrying = True
+                    try:
+                        refreshed = bool(self.on_401())
+                    except Exception:
+                        refreshed = False
+                    finally:
+                        self._auth_retrying = False
+                    if refreshed and attempt < max_tries:
+                        continue
+                    return parsed
                 if resp.status_code in (429, 500, 502, 503, 504) and attempt < max_tries:
                     retry_after = resp.headers.get("Retry-After")
                     delay = float(retry_after) if retry_after and retry_after.isdigit() \
@@ -497,14 +516,14 @@ class Client:
 # --------------------------------------------------------------------------
 
 LOGIN_PATH_DEFAULTS = [
-    "/api/v1/auth/login", "/api/v1/login", "/api/v1/auth/signin",
-    "/api/auth/login", "/api/login", "/api/v1/session", "/api/v1/sessions",
+    "/api/auth/login", "/auth/login", "/api/v1/auth/login", "/api/v1/login",
+    "/api/login", "/api/v1/auth/signin", "/api/v1/session",
     "/api/v1/auth/token", "/api/v1/token",
 ]
 
 ME_PATH_DEFAULTS = [
-    "/api/v1/auth/me", "/api/v1/me", "/api/v1/users/me",
-    "/api/v1/auth/profile", "/api/v1/profile", "/api/v1/auth/current",
+    "/api/auth/me", "/auth/me", "/api/v1/auth/me", "/api/v1/me",
+    "/api/v1/users/me", "/api/v1/auth/profile", "/api/v1/profile",
 ]
 
 
@@ -548,25 +567,65 @@ class Auth:
         cands: list = []
         known = (api_map.get("auth") or {}).get("login_endpoint")
         if known:
-            cands.append(known)
+            cands.extend(self._expand_path(known))
+        # из карты API: сначала явные login/signin, потом просто auth-пути
+        scored: list = []
         for ep in (api_map.get("endpoints") or []):
             p = ep.get("path", "")
-            if LOGIN_PATH_HINT_RE.search(p) and p not in cands:
-                cands.append(p)
-        cands += [p for p in LOGIN_PATH_DEFAULTS if p not in cands]
-        return cands
+            low = p.lower()
+            if any(t in low for t in ("logout", "refresh", "/me")):
+                continue
+            if "login" in low or "signin" in low:
+                scored.append((2, p))
+            elif "auth" in low:
+                scored.append((1, p))
+        scored.sort(key=lambda t: -t[0])
+        for _, p in scored:
+            cands.extend(self._expand_path(p))
+        for p in LOGIN_PATH_DEFAULTS:
+            cands.extend(self._expand_path(p))
+        seen, out = set(), []
+        for p in cands:
+            if p in seen:
+                continue
+            seen.add(p)
+            out.append(p)
+        return out
 
     def me_candidates(self, api_map: dict) -> list:
         cands: list = []
         known = (api_map.get("auth") or {}).get("me_endpoint")
         if known:
-            cands.append(known)
+            cands.extend(self._expand_path(known))
+        scored: list = []
         for ep in (api_map.get("endpoints") or []):
             p = ep.get("path", "")
-            if ME_PATH_HINT_RE.search(p) and p not in cands:
-                cands.append(p)
-        cands += [p for p in ME_PATH_DEFAULTS if p not in cands]
-        return cands
+            low = p.lower()
+            if any(t in low for t in ("logout", "refresh", "login", "signin")):
+                continue
+            if ME_PATH_HINT_RE.search(p):
+                scored.append((2, p))
+            elif "auth" in low:
+                scored.append((1, p))
+        scored.sort(key=lambda t: -t[0])
+        for _, p in scored:
+            cands.extend(self._expand_path(p))
+        for p in ME_PATH_DEFAULTS:
+            cands.extend(self._expand_path(p))
+        seen, out = set(), []
+        for p in cands:
+            if p in seen:
+                continue
+            seen.add(p)
+            out.append(p)
+        return out
+
+    @staticmethod
+    def _expand_path(p: str) -> list:
+        """Путь из бандла часто относителен к базе /api: даём оба варианта."""
+        if p.startswith("/api") or p.startswith("http"):
+            return [p]
+        return ["/api" + p, p]
 
     def login(self, email: str, password: str, api_map: dict | None = None,
               login_field: str = "email", verbose: bool = False) -> dict:
@@ -586,8 +645,12 @@ class Auth:
                 if verbose:
                     print(f"[i] {path}: {last_error}", file=sys.stderr)
                 continue
-            if resp.status in (404, 405, 501) and \
-                    (resp.json or {}).get("error", {}).get("code") == "NOT_FOUND":
+            ctype = resp.headers.get("Content-Type", "") if resp.headers else ""
+            code = (resp.json or {}).get("error", {}).get("code") \
+                if isinstance(resp.json, dict) else None
+            # HTML = SPA-фолбэк (маршрута нет) — пропускаем
+            if "text/html" in ctype or resp.status in (404, 405, 501) \
+                    or code == "NOT_FOUND":
                 if verbose:
                     print(f"[i] {path}: нет такого эндпоинта", file=sys.stderr)
                 continue
@@ -596,6 +659,7 @@ class Auth:
             if tokens:
                 tokens.sort(key=lambda t: (t[0], t[1]))
                 priority, key_path, value = tokens[0]
+                refresh_tok = next((v for i, k, v in tokens if i == 2), None)
                 header_tmpl = (api_map.get("auth") or {}).get("auth_header_template")
                 self.session = {
                     "base_url": self.client.base_url,
@@ -604,6 +668,7 @@ class Auth:
                     "login_field": login_field,
                     "token_path": key_path,
                     "token": value,
+                    "refresh_token": refresh_tok,
                     "auth_header_template": header_tmpl or "",
                     "saved_at": now_iso(),
                 }
@@ -649,6 +714,50 @@ class Auth:
                 raise ApiError("UNAUTHORIZED", "Токен недействителен",
                                resp.status, resp.url)
         return None
+
+    def refresh(self, api_map: dict | None = None, verbose: bool = False) -> bool:
+        """Обновляет access-токен по refresh-токену (/api/auth/refresh).
+
+        Вызывается автоматически при 401 (см. Client.on_401).
+        Возвращает True, если токен обновлён.
+        """
+        api_map = api_map or {}
+        rt = self.session.get("refresh_token")
+        if not rt:
+            return False
+        cands: list = []
+        known = (api_map.get("auth") or {}).get("refresh_endpoint")
+        if known:
+            cands.extend(self._expand_path(known))
+        for ep in (api_map.get("endpoints") or []):
+            p = ep.get("path", "")
+            if "refresh" in p.lower():
+                cands.extend(self._expand_path(p))
+        for d in ("/api/auth/refresh", "/auth/refresh", "/api/v1/auth/refresh"):
+            if d not in cands:
+                cands.append(d)
+        for p in cands:
+            try:
+                resp = self.client.post(p, json_body={"refresh_token": rt},
+                                        retries=0)
+            except SystemExit:
+                continue
+            ctype = resp.headers.get("Content-Type", "") if resp.headers else ""
+            if "text/html" in ctype or resp.status in (404, 405, 501):
+                continue
+            tokens = find_token(resp.json)
+            if tokens:
+                tokens.sort(key=lambda t: (t[0], t[1]))
+                self.session["token"] = tokens[0][2]
+                self.client.token = tokens[0][2]
+                new_rt = next((v for i, k, v in tokens if i == 2), None)
+                if new_rt:
+                    self.session["refresh_token"] = new_rt
+                self.save()
+                if verbose:
+                    print(f"[i] Токен обновлён через {p}", file=sys.stderr)
+                return True
+        return False
 
 
 # --------------------------------------------------------------------------
@@ -748,6 +857,8 @@ class Recon:
                     continue
                 if STATIC_EXT_RE.search(path):
                     continue
+                if any(c in path for c in "([\\^"):
+                    continue  # regex-маршруты роутера вида /([^\\/]*)
                 if not self._score(path):
                     continue
                 start, end = m.span()
@@ -858,7 +969,7 @@ class Recon:
 # Операции с ресурсами
 # --------------------------------------------------------------------------
 
-DEFAULT_API_PREFIX = "/api/v1"
+DEFAULT_API_PREFIX = "/api"
 
 
 def load_api_map(cfg: Path | None = None) -> dict:
@@ -869,8 +980,13 @@ def load_api_map(cfg: Path | None = None) -> dict:
         return {}
 
 
-def resolve_resource_path(resource: str, api_map: dict) -> str:
-    """Превращает 'requests' в путь API, используя карту эндпоинтов."""
+def resolve_resource_path(resource: str, api_map: dict,
+                          strip_tail_template: bool = False) -> str:
+    """Превращает 'requests' в путь API, используя карту эндпоинтов.
+
+    strip_tail_template=True — для списковых команд (list/export/watch):
+    отрезать хвостовой шаблон вида /organizations/${e}.
+    """
     if resource.startswith("/") or resource.startswith("http"):
         return resource
     r = resource.strip("/").lower()
@@ -888,6 +1004,10 @@ def resolve_resource_path(resource: str, api_map: dict) -> str:
             score = 1
         if score > best_score:
             best, best_score = path, score
+    if strip_tail_template and best:
+        best = re.sub(r"/\$\{[^}]*\}$|/:[A-Za-z0-9_]+$", "", best)
+    if best and not best.startswith(("http", "/api")):
+        best = DEFAULT_API_PREFIX + best  # пути в бандле относительны к /api
     return best or f"{DEFAULT_API_PREFIX}/{resource}"
 
 
@@ -1135,6 +1255,14 @@ def run_process(script: str, ctx: dict) -> None:
         raise SystemExit(f"Процесс {path} завершился с ошибкой: {e!r}")
 
 
+def _safe_refresh(auth, api_map, verbose):
+    """Безопасная обёртка Auth.refresh для Client.on_401."""
+    try:
+        return bool(auth.refresh(api_map, verbose=verbose))
+    except Exception:
+        return False
+
+
 # --------------------------------------------------------------------------
 # CLI
 # --------------------------------------------------------------------------
@@ -1262,6 +1390,91 @@ def build_parser() -> argparse.ArgumentParser:
     sp = sub.add_parser("run", help="выполнить пользовательский процесс")
     sp.add_argument("script", help="путь к .py файлу")
     sp.add_argument("args", nargs=argparse.REMAINDER)
+
+    # ---- addr: интерактивный поиск и выбор адресов --------------------------
+    sp = sub.add_parser("addr", aliases=["address", "addresses"],
+                        help="адреса: интерактивный поиск, выбор, просмотр")
+    aa = sp.add_subparsers(dest="addr_cmd", required=True)
+
+    a = aa.add_parser("search", help="поиск адреса по тексту (интерактивно)")
+    a.add_argument("query", nargs="?", default="")
+    a.add_argument("--org", default="", help="ID организации (пусто = все)")
+    a.add_argument("--interactive", action="store_true",
+                   help="интерактивный выбор из найденных")
+    a.add_argument("--show-equipment", action="store_true",
+                   help="показать оборудование выбранного адреса")
+    a.add_argument("--limit", type=int, default=20)
+
+    a = aa.add_parser("list", help="все адреса (или одной организации)")
+    a.add_argument("--org", default="")
+    a.add_argument("--csv", default="", help="сохранить в CSV")
+
+    a = aa.add_parser("pick", help="интерактивный выбор: организация → адрес")
+    a.add_argument("--org", default="")
+    a.add_argument("--show-equipment", action="store_true")
+
+    a = aa.add_parser("show", help="карточка адреса")
+    a.add_argument("address_id")
+    a.add_argument("--org", default="")
+    a.add_argument("--equipment", action="store_true",
+                   help="показать оборудование на адресе")
+
+    # ---- equipment: список и добавление --------------------------------------
+    sp = sub.add_parser("equipment", aliases=["eq"],
+                        help="оборудование: список, добавление, просмотр")
+    eq = sp.add_subparsers(dest="eq_cmd", required=True)
+
+    a = eq.add_parser("list", help="список оборудования")
+    a.add_argument("--address", default="", help="ID адреса")
+    a.add_argument("--inventory", default="", help="ID инвентаризации")
+    a.add_argument("-q", "--query", action="append", default=[],
+                   help="доп. параметры запроса key=value")
+    a.add_argument("--all", action="store_true")
+    a.add_argument("--limit", type=int, default=100)
+    a.add_argument("--csv", default="")
+    a.add_argument("--json", dest="json_out", default="")
+    a.add_argument("--count", action="store_true")
+
+    a = eq.add_parser("add", help="добавить оборудование")
+    a.add_argument("-d", "--data", action="append", default=[],
+                   help="JSON / key=value / @file.json (без интерактива)")
+    a.add_argument("-i", "--interactive", action="store_true",
+                   help="пошаговый мастер ввода")
+    a.add_argument("--address", default="", help="ID адреса размещения")
+    a.add_argument("--inventory", default="", help="ID инвентаризации")
+    a.add_argument("--dry-run", action="store_true")
+    a.add_argument("--method", default="")
+    a.add_argument("--path", default="", help="точный путь эндпоинта")
+
+    a = eq.add_parser("show", help="показать карточку оборудования")
+    a.add_argument("card_id")
+    a.add_argument("--raw", action="store_true")
+
+    # ---- card: все операции с карточкой -------------------------------------
+    sp = sub.add_parser("card", help="все операции с карточкой оборудования")
+    sp.add_argument("card_id", help="ID карточки/оборудования")
+    sp.add_argument("action", nargs="?", default="menu",
+                    choices=["menu", "show", "edit", "transfer", "found",
+                             "unfound", "review", "photos", "photo-add",
+                             "serial", "serial-photo", "history", "delete"],
+                    help="действие (по умолчанию menu — интерактивное меню)")
+    sp.add_argument("-d", "--data", action="append", default=[])
+    sp.add_argument("--to", default="", help="ID адреса-получателя (transfer)")
+    sp.add_argument("--inventory", default="",
+                    help="ID инвентаризации (found/unfound/transfer)")
+    sp.add_argument("--comment", default="", help="комментарий (review)")
+    sp.add_argument("--file", default="", help="файл фото (photo-add, serial-photo)")
+    sp.add_argument("--field", default="photo", help="имя поля файла в multipart")
+    sp.add_argument("--number", default="", help="серийный номер (serial)")
+    sp.add_argument("--yes", action="store_true", help="без подтверждений")
+    sp.add_argument("--dry-run", action="store_true")
+    sp.add_argument("--raw", action="store_true")
+    sp.add_argument("--method", default="", help="HTTP-метод (если не угадан)")
+    sp.add_argument("--path", default="", help="точный путь эндпоинта")
+
+    # ---- docs ------------------------------------------------------------------
+    sub.add_parser("docs", help="документация и пояснения")
+
     return p
 
 
@@ -1295,8 +1508,26 @@ def main(argv=None) -> int:
         token=token,
     )
     auth.client = client
+    # при 401 автоматически обновляем токен через /api/auth/refresh
+    client.on_401 = lambda: _safe_refresh(auth, api_map, args.verbose)
 
     cmd = args.command
+
+    if cmd in ("addr", "address", "addresses"):
+        return f2c_ops.cmd_addr(client, auth, api_map, args, cfg)
+    if cmd in ("equipment", "eq"):
+        return f2c_ops.cmd_equipment(client, auth, api_map, args, cfg)
+    if cmd == "card":
+        return f2c_ops.cmd_card(client, auth, api_map, args, cfg)
+    if cmd == "docs":
+        base = Path(__file__).resolve().parent
+        print("Документация по работе с инструментом:")
+        for f in ("README.md", "docs/GUIDE.md", "docs/ADDRESSES.md",
+                  "docs/EQUIPMENT.md", "docs/CARD.md"):
+            p = base / f
+            print(f"  {'[ok]' if p.exists() else '[!]'} {p}")
+        print("\nКратко о командах: f2c_inventory.py --help")
+        return 0
 
     if cmd == "recon":
         recon = Recon(client, cfg, verbose=args.verbose)
@@ -1406,7 +1637,9 @@ def main(argv=None) -> int:
         return 0
 
     if cmd in ("list", "get", "create", "update", "delete", "export", "import", "watch"):
-        path = resolve_resource_path(args.resource, api_map)
+        path = resolve_resource_path(
+            args.resource, api_map,
+            strip_tail_template=cmd in ("list", "export", "watch", "import"))
         if args.verbose:
             print(f"[i] Ресурс '{args.resource}' -> {path}", file=sys.stderr)
 

@@ -1,14 +1,28 @@
 # f2c_inventory — CLI для автоматизации inventory.f2c.ru
 
 Скрипт для работы с личным кабинетом учёта оборудования F2C
-(https://inventory.f2c.ru): заявки, пользователи, организации, склады,
-инвентарные карточки, остатки, движение техники.
+(https://inventory.f2c.ru). Домен системы: **организации → адреса (здания) →
+инвентаризации → карточки оборудования** — с серийными номерами, фото,
+статусами «найдено/не найдено», переносами между адресами и осмотрами.
+
+Основные возможности:
+
+- **`addr`** — интерактивный поиск по адресам (организация → адрес, живой
+  фильтр), просмотр карточки адреса и оборудования на нём;
+- **`equipment`** — список и добавление оборудования: интерактивный мастер,
+  JSON/CSV для скриптов, массовая загрузка;
+- **`card`** — все операции с карточкой оборудования: просмотр,
+  редактирование, перенос, найден/не найден, осмотр, фото, поиск по
+  серийному номеру (вручную и по фото), журнал изменений, удаление;
+- автоматическая авторизация с обновлением токена (`/api/auth/refresh`).
+
+📖 Документация: [docs/GUIDE.md](docs/GUIDE.md) (общее руководство),
+[docs/ADDRESSES.md](docs/ADDRESSES.md), [docs/EQUIPMENT.md](docs/EQUIPMENT.md),
+[docs/CARD.md](docs/CARD.md). Команда `f2c_inventory.py docs` покажет пути.
 
 Публичной документации у API системы нет, поэтому инструмент сам «вскрывает»
 его: скачивает JS-бандлы фронтенда и извлекает из кода все эндпоинты
-(метод + путь). Дальше — вход по рабочей почте, типовые операции и
-автоматизация (выгрузки, массовое обновление, мониторинг изменений,
-собственные процессы).
+(метод + путь), либо анализирует HAR-лог реального трафика браузера.
 
 ## Установка
 
@@ -35,8 +49,10 @@ python3 f2c_inventory.py login
 python3 f2c_inventory.py status
 
 # 4. Работать с данными
-python3 f2c_inventory.py list requests --all --csv requests.csv
-python3 f2c_inventory.py get organizations 12
+python3 f2c_inventory.py addr search "Ленина" --interactive
+python3 f2c_inventory.py equipment add --interactive
+python3 f2c_inventory.py card 500
+python3 f2c_inventory.py list inventories --all --csv inventories.csv
 ```
 
 Если `recon` не нашёл скриптов (например, SSR-приложение), эндпоинты можно
@@ -82,6 +98,9 @@ python3 f2c_inventory.py recon --har chrome-net-export-log.json
 | `health` | проверяет доступность API |
 | `api-map [--filter sub]` | показывает карту эндпоинтов |
 | `call METHOD PATH` | произвольный запрос: `-d '{"a":1}'`, `-d key=value`, `-d @file.json`, `-q key=value`, `--param id=42` |
+| **`addr search\|list\|pick\|show`** | интерактивный поиск по адресам: поиск по тексту с живым фильтром, выбор организация → адрес, карточка адреса, оборудование на адресе |
+| **`equipment list\|add\|show`** | оборудование: список по адресу/инвентаризации, добавление (мастер или `-d`), просмотр |
+| **`card <id> [действие]`** | все операции с карточкой: show/edit/transfer/found/unfound/review/photos/photo-add/serial/serial-photo/history/delete; без действия — интерактивное меню |
 | `list RESOURCE` | список записей: `--all`, `--limit`, `-q`, `--csv`, `--json`, `--count` |
 | `get RESOURCE ID` | одна запись |
 | `create RESOURCE -d '{...}'` | создать запись (`--dry-run` — без отправки) |
@@ -91,6 +110,7 @@ python3 f2c_inventory.py recon --har chrome-net-export-log.json
 | `import RESOURCE --csv FILE [--mode create\|update\|patch --key id]` | массовое создание/обновление из CSV |
 | `watch RESOURCE [--interval 60 --events f.jsonl]` | мониторинг: NEW / CHANGED / GONE; `--once` — одно сравнение |
 | `run script.py` | выполнить свой процесс с готовым контекстом (см. ниже) |
+| `docs` | список файлов документации |
 
 `RESOURCE` — имя ресурса (`requests`, `organizations`, `warehouses`, …) или
 полный путь `/api/...`. Имя автоматически сопоставляется с путём из карты API;
