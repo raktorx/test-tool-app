@@ -515,7 +515,7 @@ check_rc "D12: --help → exit 0" 0 "$?"
 check_contains "D12: --help содержит Использование" "Использование" "$(cat "$OUT/help.txt")"
 "$ANALYZER" --version >"$OUT/version.txt" 2>&1
 check_rc "D12: --version → exit 0" 0 "$?"
-check_contains "D12: --version содержит версию" "1.0.0" "$(cat "$OUT/version.txt")"
+check_contains "D12: --version содержит версию" "1.1.0" "$(cat "$OUT/version.txt")"
 
 echo
 echo "D13: IPv6-адрес без скобок → автодополнение https:// + скобки"
@@ -540,6 +540,70 @@ if curl -s -o /dev/null -m 8 --connect-timeout 5 "https://github.com/"; then
     check_eq "D14: tls_handshake > 0" "1" "$([ "$(json_get "$REP" '.timings.tls_handshake')" != "0.000" ] && echo 1 || echo 0)"
 else
     skip "D14: github.com недоступен"
+fi
+
+echo
+echo "D15: --debug (трассировка set -x)"
+mkdir -p "$OUT/d15"
+"$ANALYZER" "http://127.0.0.1:$PORT/" --debug -o "$OUT/d15" \
+    >"$OUT/d15/stdout.txt" 2>"$OUT/d15/stderr.txt"
+rc=$?
+check_rc "D15: exit code 0" 0 "$rc"
+check_contains "D15: трассировка в stderr" "+ " "$(cat "$OUT/d15/stderr.txt")"
+REP="$(latest_file "$OUT/d15/report_*.json")"
+check_eq "D15: отчёт корректен" "success" "$(json_get "$REP" '.status')"
+
+echo
+echo "D15b: короткий флаг -d"
+"$ANALYZER" -d "http://127.0.0.1:$PORT/" -o "$OUT/d15" \
+    >/dev/null 2>"$OUT/d15/stderr_b.txt"
+check_contains "D15b: -d включает трассировку" "+ " "$(cat "$OUT/d15/stderr_b.txt")"
+
+echo
+echo "D16: сводка с таблицей метрик и pretty-JSON"
+mkdir -p "$OUT/d16"
+"$ANALYZER" "http://127.0.0.1:$PORT/" -o "$OUT/d16" >"$OUT/d16/stdout.txt" 2>/dev/null
+rc=$?
+check_rc "D16: exit code 0" 0 "$rc"
+check_contains "D16: заголовок таблицы" "МЕТРИКИ СОЕДИНЕНИЯ" "$(cat "$OUT/d16/stdout.txt")"
+check_contains "D16: строка DNS" "DNS (резолв)" "$(cat "$OUT/d16/stdout.txt")"
+check_contains "D16: строка TTFB" "TTFB (первый байт)" "$(cat "$OUT/d16/stdout.txt")"
+check_contains "D16: заголовок JSON-отчёта" "JSON-отчёт" "$(cat "$OUT/d16/stdout.txt")"
+check_contains "D16: pretty JSON в stdout" '"timings"' "$(cat "$OUT/d16/stdout.txt")"
+
+echo
+echo "D17: --debug — лог ошибки с номером строки"
+mkdir -p "$OUT/d17"
+"$ANALYZER" "http://10.255.255.1/" --debug --no-notification \
+    --connect-timeout 1 --timeout 2 -o "$OUT/d17" \
+    >"$OUT/d17/stdout.txt" 2>"$OUT/d17/stderr.txt"
+rc=$?
+check_rc "D17: exit code 4" 4 "$rc"
+check_contains "D17: номер строки ошибки" "Ошибка в строке" "$(cat "$OUT/d17/stderr.txt")"
+check_contains "D17: код возврата в логе" "Код возврата" "$(cat "$OUT/d17/stderr.txt")"
+
+echo
+echo "D18: сообщение о проверке зависимостей"
+check_contains "D18: заголовок проверки" "Проверка зависимостей" "$(cat "$OUT/d16/stdout.txt")"
+# окружение-зависимо: либо всё установлено, либо перечислены недостающие
+if grep -q "Все зависимости установлены" "$OUT/d16/stdout.txt" \
+    || grep -q "Отсутствуют" "$OUT/d16/stdout.txt"; then
+    ok "D18: итог проверки зависимостей"
+else
+    bad "D18: итог проверки зависимостей"
+fi
+
+echo
+echo "D19: нет ANSI-кодов при выводе в файл"
+if grep -qP $'\x1b\[' "$OUT/d16/stdout.txt"; then
+    bad "D19: найдены ANSI-последовательности в stdout"
+else
+    ok "D19: нет ANSI-кодов"
+fi
+if grep -qP $'\x1b\[' "$OUT/d15/stderr.txt"; then
+    bad "D19: найдены ANSI-последовательности в stderr"
+else
+    ok "D19: нет ANSI-кодов в stderr"
 fi
 
 # ===========================================================================

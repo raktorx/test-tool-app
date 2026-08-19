@@ -20,7 +20,7 @@
 set -o pipefail
 
 SCRIPT_NAME="$(basename "$0")"
-SCRIPT_VERSION="1.0.0"
+SCRIPT_VERSION="1.1.0"
 
 # --- Конфигурация по умолчанию --------------------------------------------
 TIMEOUT=30                            # --timeout        (сек)
@@ -80,6 +80,26 @@ ERROR_MSG=""
 CURL_EXIT_CODE=0                      # код возврата последнего вызова curl
 GIST_URL=""
 
+# --- Цвета и форматирование вывода -------------------------------------------
+# Автоопределение: цвета включаются, если вывод идёт в терминал.
+# Отключить принудительно можно переменной окружения NO_COLOR (стандарт no-color).
+USE_COLOR=1
+if [[ ! -t 1 && ! -t 2 ]] || [[ -n "${NO_COLOR:-}" ]] || [[ "${TERM:-}" == "dumb" ]]; then
+    USE_COLOR=0
+fi
+if (( USE_COLOR )); then
+    C_RESET=$'\e[0m'
+    C_BOLD=$'\e[1m'
+    C_GREEN=$'\e[32m'
+    C_YELLOW=$'\e[33m'
+    C_RED=$'\e[31m'
+    C_CYAN=$'\e[36m'
+    C_MAGENTA=$'\e[35m'
+    C_BLUE=$'\e[34m'
+else
+    C_RESET=""; C_BOLD=""; C_GREEN=""; C_YELLOW=""; C_RED=""; C_CYAN=""; C_MAGENTA=""; C_BLUE=""
+fi
+
 # ===========================================================================
 # Служебные функции
 # ===========================================================================
@@ -88,10 +108,62 @@ has_cmd() {
     command -v "$1" >/dev/null 2>&1
 }
 
+# --- Вывод: цветные теги -----------------------------------------------------
+#   [*] — шаг/процесс (синий), [+] — успех (зелёный), [!] — предупреждение
+#   (жёлтый), [-] — ошибка (красный), [i] — метрика/данные (голубой).
+# В режиме --json-only человекочитаемые сообщения уходят в stderr,
+# чтобы stdout содержал только JSON.
+
+out_ok() {
+    if (( JSON_ONLY )); then
+        printf '%b[+]%b %s\n' "$C_GREEN" "$C_RESET" "$1" >&2
+    else
+        printf '%b[+]%b %s\n' "$C_GREEN" "$C_RESET" "$1"
+    fi
+}
+
+out_step() {
+    if (( JSON_ONLY )); then
+        printf '%b[*]%b %s\n' "$C_BLUE" "$C_RESET" "$1" >&2
+    else
+        printf '%b[*]%b %s\n' "$C_BLUE" "$C_RESET" "$1"
+    fi
+}
+
+out_warn() {
+    if (( JSON_ONLY )); then
+        printf '%b[!]%b %s\n' "$C_YELLOW" "$C_RESET" "$1" >&2
+    else
+        printf '%b[!]%b %s\n' "$C_YELLOW" "$C_RESET" "$1"
+    fi
+}
+
+out_err() {                           # ошибки всегда идут в stderr
+    printf '%b[-]%b %s\n' "$C_RED" "$C_RESET" "$1" >&2
+}
+
+out_metric() {
+    if (( JSON_ONLY )); then
+        printf '%b[i]%b %s\n' "$C_CYAN" "$C_RESET" "$1" >&2
+    else
+        printf '%b[i]%b %s\n' "$C_CYAN" "$C_RESET" "$1"
+    fi
+}
+
+# --- Режим отладки (--debug/-d) ----------------------------------------------
+DEBUG=false
+
+log_debug() {                         # вывод только при DEBUG=true
+    if [[ "$DEBUG" != true ]]; then
+        return 0
+    fi
+    printf '%b[DEBUG][%s]%b %s\n' "$C_MAGENTA" "$(date '+%T')" "$C_RESET" "$1" >&2
+}
+
 die() {                               # die <code> <сообщение...>
     local code="$1"
     shift
-    printf 'Ошибка: %s\n' "$*" >&2
+    out_err "Ошибка: $*"
     exit "$code"
 }
 
@@ -194,21 +266,120 @@ file_size() {                         # размер файла в байтах
     fi
 }
 
-# --- Проверка зависимостей --------------------------------------------------
+# --- Проверка и установка зависимостей ---------------------------------------
 
-check_deps() {
-    local c missing=0
-    local -a missing_list=()
-    for c in bash curl grep sed mktemp date head tail tr cut mkdir mv rm wc basename dirname; do
-        if ! has_cmd "$c"; then
-            missing=1
-            missing_list+=("$c")
+# Обязательные команды (без них скрипт не работает, exit code 2)
+MANDATORY_CMDS=(bash curl grep sed mktemp date head tail tr cut mkdir mv rm wc basename dirname)
+# Необязательные — при отсутствии функциональность деградирует
+OPTIONAL_CMDS=(jq python3 git termux-dialog termux-notification termux-vibrate)
+
+# Имя пакета Termux для бинарника (termux-api — это пакет, его бинарники —
+# termux-dialog, termux-notification, termux-vibrate и т.д.)
+binary_to_package() {
+    case "$1" in
+        bash) printf 'bash' ;;
+        curl) printf 'curl' ;;
+        grep) printf 'grep' ;;
+        sed) printf 'sed' ;;
+        mktemp|date|head|tail|tr|cut|mkdir|mv|rm|wc|basename|dirname) printf 'coreutils' ;;
+        jq) printf 'jq' ;;
+        python3) printf 'python' ;;
+        git) printf 'git' ;;
+        termux-dialog|termux-notification|termux-vibrate) printf 'termux-api' ;;
+        *) printf '%s' "$1" ;;
+    esac
+}
+
+is_interactive() {                    # stdin и stdout — терминал?
+    [[ -t 0 && -t 1 ]]
+}
+
+ask_yes_no() {                        # ask_yes_no <вопрос> → 0 = да
+    local ans=""
+    read -r -p "$1 (y/n): " -n 1 ans || { printf '\n' >&2; return 1; }
+    printf '\n' >&2
+    case "${ans,,}" in
+        y|д) return 0 ;;
+        *) return 1 ;;
+    esac
+}
+
+check_dependencies() {
+    local cmd missing_mandatory=0 missing_optional=0
+    local -a mand=() opt=() unique=()
+    local b p
+
+    out_step "Проверка зависимостей..."
+    for cmd in "${MANDATORY_CMDS[@]}"; do
+        if ! has_cmd "$cmd"; then
+            missing_mandatory=1
+            mand+=("$cmd")
         fi
     done
-    if (( missing )); then
-        printf 'Ошибка: отсутствуют обязательные зависимости: %s\n' "${missing_list[*]}" >&2
-        printf 'Установите их в Termux: pkg install coreutils curl grep sed\n' >&2
-        exit 2
+    for cmd in "${OPTIONAL_CMDS[@]}"; do
+        if ! has_cmd "$cmd"; then
+            missing_optional=1
+            opt+=("$cmd")
+        fi
+    done
+
+    if (( missing_mandatory == 0 && missing_optional == 0 )); then
+        out_ok "Все зависимости установлены."
+    else
+        if (( missing_mandatory )); then
+            out_err "Отсутствуют обязательные зависимости: ${mand[*]}"
+        fi
+        if (( missing_optional )); then
+            out_warn "Отсутствуют необязательные: ${opt[*]} (функциональность будет урезана)"
+        fi
+
+        # Уникальные пакеты Termux для установки
+        for b in "${mand[@]}" "${opt[@]}"; do
+            p="$(binary_to_package "$b")"
+            [[ " ${unique[*]} " == *" $p "* ]] || unique+=("$p")
+        done
+
+        # Предложение установки через pkg — только в интерактивном режиме
+        # (в headless-режиме молча выходим с кодом 2 при нехватке обязательных)
+        if has_cmd pkg && is_interactive; then
+            if ask_yes_no "Установить их сейчас? (pkg install -y ${unique[*]})"; then
+                out_step "Установка: pkg update && pkg install -y ${unique[*]}"
+                if pkg update && pkg install -y "${unique[@]}"; then
+                    out_ok "Пакеты установлены."
+                    # Перепроверка после установки
+                    missing_mandatory=0
+                    missing_optional=0
+                    for cmd in "${MANDATORY_CMDS[@]}"; do
+                        has_cmd "$cmd" || missing_mandatory=1
+                    done
+                    for cmd in "${OPTIONAL_CMDS[@]}"; do
+                        has_cmd "$cmd" || missing_optional=1
+                    done
+                    if (( missing_mandatory )); then
+                        out_err "Часть обязательных зависимостей всё ещё отсутствует: проверьте установку"
+                        exit 2
+                    fi
+                else
+                    out_err "Не удалось установить пакеты: ${unique[*]}"
+                    if (( missing_mandatory )); then
+                        exit 2
+                    fi
+                fi
+            else
+                out_warn "Установка пропущена. Некоторые функции могут работать некорректно."
+                if (( missing_mandatory )); then
+                    printf 'Ошибка: отсутствуют обязательные зависимости: %s\n' "${mand[*]}" >&2
+                    printf 'Установите их в Termux: pkg install coreutils curl grep sed\n' >&2
+                    exit 2
+                fi
+            fi
+        else
+            if (( missing_mandatory )); then
+                printf 'Ошибка: отсутствуют обязательные зависимости: %s\n' "${mand[*]}" >&2
+                printf 'Установите их в Termux: pkg install coreutils curl grep sed\n' >&2
+                exit 2
+            fi
+        fi
     fi
 
     # Проверка версии curl (рекомендуется >= 7.68)
@@ -247,12 +418,12 @@ normalize_and_validate_url() {        # аргумент: исходный URL; 
     # 2) пробельные символы недопустимы
     if [[ "$raw" =~ [[:space:]] ]]; then
         log_error "Невалидный URL (содержит пробелы): $(sanitize_url "$raw")"
-        printf 'Ошибка: невалидный URL (содержит пробелы): %s\n' "$raw" >&2
+        out_err "Ошибка: невалидный URL (содержит пробелы): $raw"
         return 3
     fi
     if [[ -z "$raw" ]]; then
         log_error "Невалидный URL: пустое значение"
-        printf 'Ошибка: URL не может быть пустым\n' >&2
+        out_err "Ошибка: URL не может быть пустым"
         return 3
     fi
 
@@ -264,7 +435,7 @@ normalize_and_validate_url() {        # аргумент: исходный URL; 
             http|https) ;;
             *)
                 log_error "Запрещённая схема URL: $scheme"
-                printf 'Ошибка: запрещённая схема «%s» (разрешены только http и https)\n' "$scheme" >&2
+                out_err "Ошибка: запрещённая схема «$scheme» (разрешены только http и https)"
                 return 3
                 ;;
         esac
@@ -280,7 +451,7 @@ normalize_and_validate_url() {        # аргумент: исходный URL; 
                 ;;
             *)
                 log_error "Запрещённая схема URL: $scheme"
-                printf 'Ошибка: запрещённая схема «%s» (разрешены только http и https)\n' "$scheme" >&2
+                out_err "Ошибка: запрещённая схема «$scheme» (разрешены только http и https)"
                 return 3
                 ;;
         esac
@@ -293,7 +464,7 @@ normalize_and_validate_url() {        # аргумент: исходный URL; 
     # 4) базовое соответствие шаблону URL и наличие хоста
     if [[ ! "$raw" =~ ^[a-zA-Z][a-zA-Z0-9+.-]*://[^[:space:]/?#]+(/[^[:space:]]*)?(\?[^[:space:]]*)?(#.*)?$ ]]; then
         log_error "Невалидный URL после нормализации: $(sanitize_url "$raw")"
-        printf 'Ошибка: невалидный URL: %s\n' "$raw" >&2
+        out_err "Ошибка: невалидный URL: $raw"
         return 3
     fi
 
@@ -786,21 +957,21 @@ upload_gist() {                       # код возврата: 0 — успе�
             fi
         else
             log_error "GITHUB_TOKEN не задан — загрузка на Gist невозможна"
-            printf 'Ошибка: загрузка на Gist требует GITHUB_TOKEN (переменная окружения)\n' >&2
+            out_err "Ошибка: загрузка на Gist требует GITHUB_TOKEN (переменная окружения)"
             return 5
         fi
     fi
 
     if [[ -z "$HTML_FILE" || ! -f "$HTML_FILE" || ! -s "$HTML_FILE" ]]; then
         log_error "HTML-копия страницы недоступна или пуста — загрузка на Gist невозможна"
-        printf 'Ошибка: HTML-файл недоступен или пуст для загрузки на Gist\n' >&2
+        out_err "Ошибка: HTML-файл недоступен или пуст для загрузки на Gist"
         return 5
     fi
 
     size="$(file_size "$HTML_FILE")"
     if (( size > GIST_LIMIT_BYTES )); then
         log_error "Размер HTML-копии ($size байт) превышает лимит GitHub Gist (10 МБ)"
-        printf 'Ошибка: размер файла %s байт превышает лимит GitHub Gist (10 МБ)\n' "$size" >&2
+        out_err "Ошибка: размер файла $size байт превышает лимит GitHub Gist (10 МБ)"
         return 5
     fi
 
@@ -851,10 +1022,10 @@ except Exception:
     fi
     if [[ "$code" == "401" || "$code" == "403" ]]; then
         log_error "GitHub API: ошибка авторизации (HTTP $code): $api_msg"
-        printf 'Ошибка: GitHub API отклонил запрос (HTTP %s). Проверьте токен и право gist.\n' "$code" >&2
+        out_err "Ошибка: GitHub API отклонил запрос (HTTP $code). Проверьте токен и право gist."
     else
         log_error "GitHub API: ошибка (HTTP $code): $api_msg"
-        printf 'Ошибка: GitHub API вернул HTTP %s: %s\n' "$code" "$api_msg" >&2
+        out_err "Ошибка: GitHub API вернул HTTP $code: $api_msg"
     fi
     return 5
 }
@@ -969,7 +1140,7 @@ get_url_interactive() {               # ввод URL в GUI-режиме
         log_warn "termux-dialog не найден — переход в упрощённый текстовый режим"
         if ! read -r -p "Введите URL для аудита: " URL; then
             log_error "Не удалось получить URL из stdin (stdin закрыт?)"
-            printf 'Ошибка: не указан URL (аргументом) и нет интерактивного ввода\n' >&2
+            out_err "Ошибка: не указан URL (аргументом) и нет интерактивного ввода"
             exit 1
         fi
     fi
@@ -981,19 +1152,43 @@ get_url_interactive() {               # ввод URL в GUI-режиме
 # ===========================================================================
 
 print_summary() {
-    printf '=== Результат аудита ===\n'
-    printf 'URL: %s\n' "$URL"
-    printf 'HTTP-код: %s\n' "${HTTP_CODE:-—}"
-    printf 'Время: DNS %s c | TCP %s c | TLS %s c\n' "$DNS_RESOLUTION" "$TCP_CONNECTION" "$TLS_HANDSHAKE"
-    printf 'TTFB: %s c | Всего: %s c\n' "$TTFB" "$TOTAL"
-    printf 'Размер тела: %s байт\n' "$SIZE_FILE"
-    printf 'Заголовок: %s\n' "${TITLE:-—}"
-    [[ -n "$GIST_URL" ]] && printf 'Gist: %s\n' "$GIST_URL"
-    printf 'Отчёт: %s\n' "${REPORT_FILE:-—}"
-    if [[ -n "$ERROR_MSG" ]]; then
-        printf 'Ошибка: %s\n' "$ERROR_MSG"
+    local line="------------------------------------------"
+
+    out_metric "=== Результат аудита ==="
+    printf '%bURL:%b %s\n' "$C_BOLD" "$C_RESET" "$URL"
+    printf '%bHTTP-код:%b %s (%s)\n' "$C_BOLD" "$C_RESET" "${HTTP_CODE:-—}" "$STATUS"
+    printf '\n%b%s%b\n' "$C_BOLD" "--- МЕТРИКИ СОЕДИНЕНИЯ ---" "$C_RESET"
+    printf '%-24s | %-12s\n' "Параметр" "Значение"
+    printf '%s\n' "$line"
+    printf '%-24s | %-12s\n' "DNS (резолв)" "${DNS_RESOLUTION} c"
+    printf '%-24s | %-12s\n' "TCP (соединение)" "${TCP_CONNECTION} c"
+    printf '%-24s | %-12s\n' "TLS (рукопожатие)" "${TLS_HANDSHAKE} c"
+    printf '%-24s | %-12s\n' "TTFB (первый байт)" "${TTFB} c"
+    printf '%-24s | %-12s\n' "Общее время" "${TOTAL} c"
+    printf '%s\n' "$line"
+    printf '%-24s | %-12s\n' "Размер тела" "${SIZE_FILE} байт"
+    printf '%-24s | %-12s\n' "Заголовок" "${TITLE:-—}"
+    if [[ "$FOLLOWED" == true ]]; then
+        printf '%-24s | %-12s\n' "Редиректы" "${NUM_REDIRECTS} → ${FINAL_URL}"
     fi
-    printf '=======================\n'
+    [[ -n "$GIST_URL" ]] && printf '%-24s | %-12s\n' "Gist" "$GIST_URL"
+    printf 'Отчёт: %s\n' "${REPORT_FILE:-—}"
+    [[ -n "$ERROR_MSG" ]] && out_err "$ERROR_MSG"
+}
+
+print_pretty_report() {               # красивый JSON через jq -C
+    [[ -n "$REPORT_JSON" ]] || return 0
+    printf '\n'
+    out_metric "JSON-отчёт:"
+    if has_cmd jq; then
+        if (( USE_COLOR )); then
+            printf '%s\n' "$REPORT_JSON" | jq -C '.' 2>/dev/null || printf '%s\n' "$REPORT_JSON"
+        else
+            printf '%s\n' "$REPORT_JSON" | jq '.' 2>/dev/null || printf '%s\n' "$REPORT_JSON"
+        fi
+    else
+        printf '%s\n' "$REPORT_JSON"
+    fi
 }
 
 notify_result() {
@@ -1016,16 +1211,20 @@ $SCRIPT_NAME $SCRIPT_VERSION — интерактивный аудит веб-р
   $SCRIPT_NAME [URL] [опции]
   $SCRIPT_NAME --url <URL> [опции]
 
-Режимы:
+  Режимы:
   Без аргумента URL запускается GUI-режим: URL запрашивается через
   termux-dialog (или read, если termux-api не установлен).
   С аргументом URL — headless/CLI-режим для Tasker, cron и других скриптов.
+  При отсутствии зависимостей в интерактивном режиме предлагается
+  их автоматическая установка через pkg (Termux).
 
 Опции:
   -u, --url <url>          URL для анализа (или позиционный аргумент)
   -t, --timeout <сек>      общий таймаут запроса (по умолчанию 30)
       --connect-timeout <сек>
                            таймаут установления соединения (по умолчанию 10)
+  -d, --debug              режим отладки: трассировка (set -x) и вывод
+                           ошибок с номером строки
   -o, --output-dir <путь>  каталог для сохранения файлов (по умолчанию текущий)
       --json-only          вывести только JSON-отчёт в stdout (без сообщений)
       --no-notification    отключить системные уведомления Termux
@@ -1069,6 +1268,9 @@ parse_args() {
             --version)
                 version
                 exit 0
+                ;;
+            -d|--debug)
+                DEBUG=true
                 ;;
             -u|--url)
                 shift
@@ -1143,7 +1345,7 @@ parse_args() {
 setup_output_dir() {
     if (( OUTPUT_DIR_SET )) && [[ "$OUTPUT_DIR" != "$PWD" ]]; then
         if ! mkdir -p "$OUTPUT_DIR" 2>/dev/null; then
-            printf 'Ошибка: не удалось создать каталог: %s\n' "$OUTPUT_DIR" >&2
+            out_err "Ошибка: не удалось создать каталог: $OUTPUT_DIR"
             exit 1
         fi
     fi
@@ -1155,7 +1357,7 @@ init_log() {
     LOG_FILE="$OUTPUT_DIR/error.log"
     if ! touch "$LOG_FILE" 2>/dev/null; then
         LOG_FILE="$PWD/error.log"
-        printf 'Внимание: не удалось писать журнал в %s, использую %s\n' "$OUTPUT_DIR/error.log" "$LOG_FILE" >&2
+        out_warn "Внимание: не удалось писать журнал в $OUTPUT_DIR/error.log, использую $LOG_FILE" >&2
         touch "$LOG_FILE" 2>/dev/null || LOG_FILE="/dev/null"
     fi
 }
@@ -1192,7 +1394,7 @@ cleanup() {
 
 # shellcheck disable=SC2329 # вызывается косвенно (trap INT TERM)
 interrupt_handler() {
-    printf 'Прервано пользователем\n' >&2
+    out_err "Прервано пользователем"
     log_info "Прервано пользователем (SIGINT/SIGTERM)"
     cleanup
     exit 130
@@ -1223,18 +1425,26 @@ determine_status() {
 main() {
     parse_args "$@"
 
+    # --- Режим отладки (--debug/-d) ---
+    if [[ "$DEBUG" == true ]]; then
+        set -x                                            # трассировка команд
+        set -E                                            # ERR-ловушка в функциях
+        trap 'log_debug "Ошибка в строке $LINENO. Код возврата: $?"' ERR
+        log_debug "Режим отладки включён (PID $$)"
+    fi
+
     trap cleanup EXIT
     trap interrupt_handler INT TERM
 
     WORK_TMP="$(mktemp -d "${TMPDIR:-/tmp}/analyzer.XXXXXX" 2>/dev/null || mktemp -d)"
     if [[ -z "$WORK_TMP" || ! -d "$WORK_TMP" ]]; then
-        printf 'Ошибка: не удалось создать временную директорию\n' >&2
+        out_err "Ошибка: не удалось создать временную директорию"
         exit 1
     fi
 
     setup_output_dir
     init_log
-    check_deps
+    check_dependencies
 
     log_info "Запуск аудита (analyzer.sh $SCRIPT_VERSION, PID $$)"
 
@@ -1258,7 +1468,7 @@ main() {
     log_info "Начало аудита: $(sanitize_url "$URL")"
     notify_show "Аудит веб-ресурса" "Выполняется запрос к $(host_of "$URL")..."
     if (( ! JSON_ONLY )); then
-        printf 'Выполняется запрос к %s...\n' "$(sanitize_url "$URL")" >&2
+        out_metric "Выполняется запрос к $(sanitize_url "$URL")..." >&2
     fi
 
     run_audit
@@ -1310,6 +1520,8 @@ main() {
 
     if (( JSON_ONLY )); then
         printf '%s\n' "$REPORT_JSON"
+    else
+        print_pretty_report
     fi
 
     log_info "Аудит завершён, exit code $EXIT_CODE"
