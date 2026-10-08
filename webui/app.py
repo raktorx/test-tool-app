@@ -35,20 +35,23 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from fastapi import FastAPI, File, Form, Request, UploadFile
-from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
 import f2c_inventory as core
 import f2c_ops as ops
+from webui import docs_store
 
-BASE_URL = os.environ.get("F2C_BASE_URL", "https://inventory.f2c.ru")
+BASE_URL = os.environ.get("F2C_BASE_URL", "https://inventory.f2c.ru").rstrip("/")
+DEFAULT_INVENTORY_ID = os.environ.get("F2C_DEFAULT_INVENTORY_ID", "").strip()
 CFG_DIR = Path(os.environ.get(
     "F2C_CONFIG_DIR", str(Path.home() / ".config" / "f2c-inventory")))
 SAMPLE_MAP = ROOT / "webui" / "sample_api_map.json"
 DEMO = "127.0.0.1" in BASE_URL or "localhost" in BASE_URL
 
-app = FastAPI(title="F2C Инвентаризация")
+app = FastAPI(title="F2C Инвентаризация", docs_url="/api/docs",
+              redoc_url="/api/redoc", openapi_url="/api/openapi.json")
 app.mount("/static", StaticFiles(directory=str(ROOT / "webui" / "static")),
           name="static")
 templates = Jinja2Templates(directory=str(ROOT / "webui" / "templates"))
@@ -98,7 +101,8 @@ def render(request, name, **ctx):
     return templates.TemplateResponse(
         request=request, name=name,
         context={"user_email": auth.session.get("email"),
-                 "flash": flash(request), "demo": DEMO, **ctx})
+                 "flash": flash(request), "demo": DEMO,
+                 "default_inventory_id": DEFAULT_INVENTORY_ID, **ctx})
 
 
 def redirect(path, msg="", kind="ok"):
@@ -122,19 +126,109 @@ def api_error_response(request, e, back):
     return err(request, e, back)
 
 
+def start_path():
+    """Initial workspace, optionally scoped to a configured inventory."""
+    if DEFAULT_INVENTORY_ID:
+        return "/equipment?inventory_id=" + urllib.parse.quote(DEFAULT_INVENTORY_ID)
+    return "/dashboard"
+
+
 # --------------------------------------------------------------------------
 # Авторизация
 # --------------------------------------------------------------------------
 
+@app.get("/manifest.webmanifest", include_in_schema=False)
+def manifest():
+    return FileResponse(ROOT / "webui" / "static" / "manifest.webmanifest",
+                        media_type="application/manifest+json")
+
+
+@app.get("/sw.js", include_in_schema=False)
+def service_worker():
+    response = FileResponse(ROOT / "webui" / "static" / "sw.js",
+                            media_type="application/javascript")
+    response.headers["Service-Worker-Allowed"] = "/"
+    response.headers["Cache-Control"] = "no-cache"
+    return response
+
+
 @app.get("/", response_class=HTMLResponse)
 def index(request: Request):
-    return redirect("/organizations")
+    return redirect(start_path())
+
+
+@app.get("/dashboard", response_class=HTMLResponse)
+def dashboard(request: Request):
+    """Operational overview assembled through the same domain layer as CLI."""
+    if not logged(request):
+        return redirect("/login")
+    client, auth, api_map = ensure_setup()
+    try:
+        orgs = ops.list_organizations(client, api_map)
+        addresses = ops.collect_addresses(client, api_map)
+        equipment = ops.equipment_rows(client, api_map, all_pages=True)
+        inv_resp, _ = ops.try_candidates(
+            client, ops._dedupe(ops._map_candidates(
+                api_map, re.compile(r"/inventories$", re.I), "GET")
+                + [("GET", "/api/inventories")]))
+        inventories = inv_resp.as_list()
+    except core.ApiError as e:
+        return err(request, e, "/dashboard")
+
+    statuses = {}
+    for item in equipment:
+        status = str(item.get("status") or "unknown").lower()
+        statuses[status] = statuses.get(status, 0) + 1
+    active_inventories = sum(
+        1 for item in inventories if str(item.get("status", "")).lower() == "active")
+    # Most APIs return the registry in creation order. Avoid assuming that IDs
+    # are numeric (some installations use UUIDs).
+    recent = list(reversed(equipment[-5:]))
+    return render(request, "dashboard.html", org_count=len(orgs),
+                  address_count=len(addresses), equipment_count=len(equipment),
+                  active_inventories=active_inventories, statuses=statuses,
+                  recent=recent)
+
+
+# --------------------------------------------------------------------------
+# Встроенная база знаний
+# --------------------------------------------------------------------------
+
+def docs_db_path():
+    return CFG_DIR / "docs.db"
+
+
+@app.get("/docs", response_class=HTMLResponse)
+def documentation(request: Request, q: str = "", category: str = ""):
+    if not logged(request):
+        return redirect("/login")
+    articles = docs_store.list_articles(docs_db_path(), q.strip(), category)
+    return render(request, "docs.html", articles=articles,
+                  categories=docs_store.categories(docs_db_path()),
+                  query=q.strip(), selected_category=category)
+
+
+@app.get("/docs/{slug}", response_class=HTMLResponse)
+def documentation_article(request: Request, slug: str):
+    if not logged(request):
+        return redirect("/login")
+    article = docs_store.get_article(docs_db_path(), slug)
+    if not article:
+        return redirect("/docs", "Статья не найдена", "err")
+    return render(request, "docs_article.html", article=article)
+
+
+@app.get("/api/ui/docs/search")
+def documentation_search(request: Request, q: str = ""):
+    if not logged(request):
+        return JSONResponse({"error": "unauthorized"}, status_code=401)
+    return JSONResponse(docs_store.list_articles(docs_db_path(), q.strip()))
 
 
 @app.get("/login", response_class=HTMLResponse)
 def login_page(request: Request):
     if logged(request):
-        return redirect("/organizations")
+        return redirect(start_path())
     return render(request, "login.html", error="")
 
 
@@ -146,8 +240,10 @@ def login_post(request: Request, email: str = Form(...),
         auth.login(email.strip(), password, api_map)
     except SystemExit as e:
         return render(request, "login.html", error=str(e))
-    resp = RedirectResponse("/organizations?flash=" + urllib.parse.quote(
-        "ok:Вход выполнен"), status_code=303)
+    target = start_path()
+    target += ("&" if "?" in target else "?") + "flash=" + urllib.parse.quote(
+        "ok:Вход выполнен")
+    resp = RedirectResponse(target, status_code=303)
     resp.set_cookie("f2c_ui", "1", httponly=True, samesite="lax")
     return resp
 

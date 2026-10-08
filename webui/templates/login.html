@@ -2,6 +2,10 @@
 {% block title %}Вход · F2C{% endblock %}
 {% block content %}
 <div class="panel" style="max-width: 460px; margin: 60px auto;">
+  <div style="display:flex;align-items:center;gap:12px;margin-bottom:24px;">
+    <img src="/static/icon.svg" width="44" height="44" alt="">
+    <div><strong style="font-size:18px;">F2C Hub</strong><div class="hint">Управление активами</div></div>
+  </div>
   <h1>Вход в кабинет</h1>
   <p class="sub">Рабочая почта и пароль от inventory.f2c.ru</p>
   {% if error %}<div class="error-box" style="margin-bottom: 14px;">{{ error }}</div>{% endif %}
